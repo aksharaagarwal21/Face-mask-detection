@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Model files (large binary files)
+models/*.caffemodel
+models/*.h5
+
+# Logs and output
+logs/
+screenshots/
+*.log
+
+# Dataset (download separately)
+dataset/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Test files
+test_output.txt
+test_imports.py
+
+# Pyre
+.pyre/
+.pyre_configuration

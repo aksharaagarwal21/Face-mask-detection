@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face Mask Detection Dashboard</title>
+  <meta name="description" content="Real-time AI-powered face mask compliance monitoring dashboard" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- ═══ HEADER ═══ -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-icon">🎭</div>
+      <div class="header-title">
+        <h1>Face Mask Detection</h1>
+        <span class="header-sub">AI-Powered Real-Time Compliance Monitor</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge" id="streamStatus">
+        <span class="status-dot"></span>
+        <span class="status-text">Connecting…</span>
+      </div>
+      <span class="session-id" id="sessionId">Session: —</span>
+    </div>
+  </header>
+
+  <!-- ═══ MAIN GRID ═══ -->
+  <main class="main-grid">
+
+    <!-- ── Live Feed Panel ── -->
+    <section class="panel feed-panel" id="feedPanel">
+      <div class="panel-header">
+        <h2>📹 Live Feed</h2>
+        <div class="feed-controls">
+          <button class="btn btn-success" id="btnStart" onclick="startStream()">▶ Start</button>
+          <button class="btn btn-danger" id="btnStop" onclick="stopStream()" disabled>⏹ Stop</button>
+          <button class="btn btn-secondary" id="btnScreenshot" onclick="takeScreenshot()">📸 Screenshot</button>
+          <button class="btn btn-secondary" id="btnHeatmap" onclick="saveHeatmap()">🗺 Heatmap</button>
+        </div>
+      </div>
+      <div class="feed-wrapper">
+        <img id="videoFeed" src="/video_feed" alt="Live camera feed" class="video-feed" />
+        <div class="feed-overlay-fps" id="fpsBadge">0 FPS</div>
+      </div>
+    </section>
+
+    <!-- ── Stats Cards ── -->
+    <section class="stats-section">
+      <div class="stat-card card-total">
+        <div class="stat-icon">👥</div>
+        <div class="stat-value" id="statTotal">0</div>
+        <div class="stat-label">Total Faces</div>
+        <div class="stat-trend" id="trendTotal"></div>
+      </div>
+      <div class="stat-card card-compliant">
+        <div class="stat-icon">✅</div>
+        <div class="stat-value" id="statMask">0</div>
+        <div class="stat-label">With Mask</div>
+      </div>
+      <div class="stat-card card-violation">
+        <div class="stat-icon">❌</div>
+        <div class="stat-value" id="statNoMask">0</div>
+        <div class="stat-label">No Mask</div>
+      </div>
+      <div class="stat-card card-incorrect">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-value" id="statIncorrect">0</div>
+        <div class="stat-label">Incorrect</div>
+      </div>
+    </section>
+
+    <!-- ── Compliance Gauge ── -->
+    <section class="panel chart-panel donut-panel">
+      <div class="panel-header">
+        <h2>📊 Compliance Rate</h2>
+      </div>
+      <div class="donut-wrapper">
+        <canvas id="donutChart" width="220" height="220"></canvas>
+        <div class="donut-center">
+          <div class="donut-pct" id="donutPct">0%</div>
+          <div class="donut-sub">Compliance</div>
+        </div>
+      </div>
+      <div class="donut-legend">
+        <span class="legend-item"><span class="dot dot-green"></span>With Mask</span>
+        <span class="legend-item"><span class="dot dot-red"></span>No Mask</span>
+        <span class="legend-item"><span class="dot dot-orange"></span>Incorrect</span>
+      </div>
+    </section>
+
+    <!-- ── Compliance Timeline ── -->
+    <section class="panel chart-panel timeline-panel">
+      <div class="panel-header">
+        <h2>📈 Compliance Timeline</h2>
+        <div class="chart-controls">
+          <button class="btn btn-sm btn-secondary" onclick="resetStats()">🔄 Reset</button>
+        </div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="timelineChart"></canvas>
+      </div>
+    </section>
+
+    <!-- ── Violation Log ── -->
+    <section class="panel log-panel">
+      <div class="panel-header">
+        <h2>📋 Violation Log</h2>
+        <div class="log-controls">
+          <button class="btn btn-sm btn-secondary" onclick="refreshLogs()">↻ Refresh</button>
+          <button class="btn btn-sm btn-accent" onclick="downloadLog()">⬇ Download CSV</button>
+        </div>
+      </div>
+      <div class="log-table-wrapper">
+        <table class="log-table" id="logTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Face ID</th>
+              <th>Label</th>
+              <th>Confidence</th>
+              <th>Frame</th>
+            </tr>
+          </thead>
+          <tbody id="logBody">
+            <tr class="log-empty"><td colspan="5">No violations logged yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Session Summary ── -->
+    <section class="panel summary-panel">
+      <div class="panel-header">
+        <h2>📌 Session Summary</h2>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <span class="summary-label">Frames Processed</span>
+          <span class="summary-value mono" id="sumFrames">0</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">FPS</span>
+          <span class="summary-value mono" id="sumFps">0.0</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Stream Active</span>
+          <span class="summary-value" id="sumActive">No</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Compliance</span>
+          <span class="summary-value" id="sumCompliance">0%</span>
+        </div>
+      </div>
+      <div class="compliance-bar-wrapper">
+        <div class="compliance-bar-label">
+          <span>Compliance Level</span>
+          <span id="complianceBarPct">0%</span>
+        </div>
+        <div class="compliance-bar-bg">
+          <div class="compliance-bar-fill" id="complianceFill" style="width:0%"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══ TOAST NOTIFICATION ═══ -->
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
