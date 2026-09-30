@@ -1,0 +1,16 @@
+.git
+.github
+.pytest_cache
+**/__pycache__
+*.py[cod]
+.venv
+venv
+
+# Training data and run outputs
+dataset
+logs
+screenshots
+models/checkpoints
+models/*.caffemodel
+
+tests
