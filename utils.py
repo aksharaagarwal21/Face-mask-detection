@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import time
 from collections import deque
-from config import CLASS_COLORS, INPUT_SIZE, CROP_MARGIN
+from config import CLASS_COLORS, CROP_MARGIN
 
 
 # ─── FPS Calculator ───────────────────────────────────────────────────────────
@@ -132,15 +132,6 @@ def crop_face(image, box, margin=CROP_MARGIN):
     if crop.size and (pad_t or pad_b or pad_l or pad_r):
         crop = cv2.copyMakeBorder(crop, pad_t, pad_b, pad_l, pad_r, cv2.BORDER_REPLICATE)
     return crop
-
-
-def preprocess_face(face_roi, target_size=INPUT_SIZE):
-    """Resize and normalize a face ROI for the mask classifier."""
-    face = cv2.resize(face_roi, target_size)
-    face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
-    face = face.astype("float32") / 255.0
-    face = np.expand_dims(face, axis=0)
-    return face
 
 
 def resize_frame(frame, width=1280):

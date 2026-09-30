@@ -1,6 +1,11 @@
 # pyre-unsafe
 """
-mask_detector.py — Mask classification inference engine using the trained MobileNetV2 model
+mask_detector.py — Mask classification inference engine
+
+Face ROIs should come from FaceDetector.detect_faces_rois(), which crops them
+the same way the training set was built. With TTA on (default), each face is
+scored together with its mirror image and the two probability vectors are
+averaged, the same as evaluate.py does.
 """
 
 import os
@@ -8,8 +13,10 @@ import pickle
 import logging
 import numpy as np
 from config import (
-    MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD, INPUT_SIZE
+    MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD, MASK_TTA
 )
+
+VIOLATION_CLASSES = ("without_mask", "mask_weared_incorrect")
 
 logger = logging.getLogger("MaskDetector")
 
@@ -24,10 +31,15 @@ class MaskDetector:
         # results: list of (label, confidence)
     """
 
-    def __init__(self, model_path=MASK_MODEL_PATH, label_encoder_path=LABEL_ENCODER_PATH):
+    def __init__(self, model_path=MASK_MODEL_PATH, label_encoder_path=LABEL_ENCODER_PATH,
+                 tta=MASK_TTA, confidence_threshold=MASK_CONFIDENCE_THRESHOLD):
         self.model = self._load_model(model_path)
         self.classes = self._load_classes(label_encoder_path)
-        logger.info(f"MaskDetector initialized | classes: {self.classes}")
+        self.input_size = tuple(self.model.input_shape[1:3])   # (height, width)
+        self.tta = tta
+        self.confidence_threshold = confidence_threshold
+        logger.info(f"MaskDetector initialized | classes: {self.classes} | "
+                    f"input {self.input_size} | TTA {'on' if tta else 'off'}")
 
     def _load_model(self, path):
         import keras
@@ -52,9 +64,37 @@ class MaskDetector:
     def _preprocess(self, face_roi):
         """Resize a BGR face ROI to the model input (the model scales pixels itself)."""
         import cv2
-        face = cv2.resize(face_roi, (INPUT_SIZE[1], INPUT_SIZE[0]))
+        h, w = self.input_size
+        # INTER_AREA when shrinking avoids aliasing on large webcam faces
+        interp = cv2.INTER_AREA if face_roi.shape[0] > h else cv2.INTER_LINEAR
+        face = cv2.resize(face_roi, (w, h), interpolation=interp)
         face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
         return face.astype("float32")
+
+    def predict_probs(self, face_rois):
+        """
+        Class probabilities for a list of BGR face ROIs.
+
+        Returns:
+            np.ndarray of shape (len(face_rois), n_classes), rows in self.classes order
+        """
+        if not face_rois:
+            return np.zeros((0, len(self.classes)), dtype="float32")
+        batch = np.stack([self._preprocess(roi) for roi in face_rois], axis=0)
+        if self.tta:
+            batch = np.concatenate([batch, batch[:, :, ::-1, :]], axis=0)
+        # predict_on_batch runs the compiled graph: ~5x faster than an eager call
+        # and without model.predict()'s per-call dataset overhead
+        probs = np.asarray(self.model.predict_on_batch(batch))
+        if self.tta:
+            n = len(face_rois)
+            probs = (probs[:n] + probs[n:]) / 2.0
+        return probs
+
+    def label_of(self, probs):
+        """(label, confidence) for one probability vector."""
+        idx = int(np.argmax(probs))
+        return self.classes[idx], float(probs[idx])
 
     def predict_single(self, face_roi):
         """
@@ -63,13 +103,7 @@ class MaskDetector:
         Returns:
             (label: str, confidence: float)
         """
-        face = self._preprocess(face_roi)
-        face = np.expand_dims(face, axis=0)
-        preds = self.model.predict(face, verbose=0)[0]
-        idx = np.argmax(preds)
-        label = self.classes[idx]
-        confidence = float(preds[idx])
-        return label, confidence
+        return self.label_of(self.predict_probs([face_roi])[0])
 
     def predict_batch(self, face_rois):
         """
@@ -81,19 +115,7 @@ class MaskDetector:
         Returns:
             list of (label, confidence) tuples
         """
-        if not face_rois:
-            return []
-
-        batch = np.stack([self._preprocess(roi) for roi in face_rois], axis=0)
-        preds = self.model.predict(batch, verbose=0)
-
-        results = []
-        for pred in preds:
-            idx = np.argmax(pred)
-            label = self.classes[idx]
-            confidence = float(pred[idx])
-            results.append((label, confidence))
-        return results
+        return [self.label_of(p) for p in self.predict_probs(face_rois)]
 
     def predict_with_all_scores(self, face_roi):
         """
@@ -102,15 +124,12 @@ class MaskDetector:
         Returns:
             dict: {class_name: confidence_score}
         """
-        face = self._preprocess(face_roi)
-        face = np.expand_dims(face, axis=0)
-        preds = self.model.predict(face, verbose=0)[0]
+        preds = self.predict_probs([face_roi])[0]
         return {cls: float(preds[i]) for i, cls in enumerate(self.classes)}
 
     def is_violation(self, label, confidence):
         """Return True if this detection represents a mask policy violation."""
-        return label in ("without_mask", "mask_weared_incorrect") and \
-               confidence >= MASK_CONFIDENCE_THRESHOLD
+        return label in VIOLATION_CLASSES and confidence >= self.confidence_threshold
 
 
 if __name__ == "__main__":
