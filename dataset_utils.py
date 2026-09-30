@@ -12,20 +12,20 @@ import urllib.request
 import numpy as np
 from pathlib import Path
 from PIL import Image, ImageFilter, ImageEnhance
-from config import DATASET_DIR, CLASSES, TRAIN_SPLIT, VAL_SPLIT, TEST_SPLIT
+from config import DATASET_DIR, TRAIN_DIR, CLASSES
+
+SPLITS = ("train", "val", "test")
 
 logger = logging.getLogger("DatasetUtils")
 
 # Kaggle-compatible dataset (Face Mask Detection)
 DATASET_SOURCES = {
     "sample_description": (
-        "For training, place images in:\n"
-        "  dataset/with_mask/\n"
-        "  dataset/without_mask/\n"
-        "  dataset/mask_weared_incorrect/\n\n"
-        "Recommended dataset: Kaggle 'Face Mask Detection' by Andrewmvd\n"
-        "URL: https://www.kaggle.com/datasets/andrewmvd/face-mask-detection\n\n"
-        "Or run: python dataset_utils.py --generate-sample"
+        "Prepare the real dataset (downloads from Kaggle, crops faces, splits by photo):\n"
+        "  python download_dataset.py\n\n"
+        "This creates dataset/{train,val,test}/{with_mask,without_mask,mask_weared_incorrect}/\n"
+        "Source: https://www.kaggle.com/datasets/andrewmvd/face-mask-detection\n\n"
+        "Or, for a quick smoke test only: python dataset_utils.py --generate-sample"
     )
 }
 
@@ -43,9 +43,12 @@ def create_sample_dataset(n_per_class=30):
         "mask_weared_incorrect": [(200, 100, 0), (180, 120, 50), (220, 90, 0)],
     }
 
+    def split_of(i):
+        return "test" if i % 10 == 0 else "val" if i % 10 == 1 else "train"
+
     for cls in CLASSES:
-        class_dir = os.path.join(DATASET_DIR, cls)
-        os.makedirs(class_dir, exist_ok=True)
+        for split in SPLITS:
+            os.makedirs(os.path.join(DATASET_DIR, split, cls), exist_ok=True)
         cls_colors = colors.get(cls, [(128, 128, 128)])
 
         for i in range(n_per_class):
@@ -65,7 +68,7 @@ def create_sample_dataset(n_per_class=30):
             enhancer = ImageEnhance.Brightness(img)
             img = enhancer.enhance(random.uniform(0.7, 1.3))
 
-            path = os.path.join(class_dir, f"{cls}_{i:04d}.jpg")
+            path = os.path.join(DATASET_DIR, split_of(i), cls, f"{cls}_{i:04d}.jpg")
             img.save(path, "JPEG", quality=90)
 
         logger.info(f"  ✅ {cls}: {n_per_class} images")
@@ -74,7 +77,7 @@ def create_sample_dataset(n_per_class=30):
     return DATASET_DIR
 
 
-def get_class_distribution(dataset_dir=DATASET_DIR):
+def get_class_distribution(dataset_dir=TRAIN_DIR):
     """Return dict of {class_name: file_count}."""
     dist = {}
     for cls in CLASSES:
@@ -88,7 +91,7 @@ def get_class_distribution(dataset_dir=DATASET_DIR):
     return dist
 
 
-def validate_dataset(dataset_dir=DATASET_DIR, min_per_class=5):
+def validate_dataset(dataset_dir=TRAIN_DIR, min_per_class=5):
     """Check dataset structure and minimum counts. Returns True if valid."""
     dist = get_class_distribution(dataset_dir)
     valid = True
@@ -115,19 +118,18 @@ def compute_class_weights(dist: dict):
     return weights
 
 
-def print_dataset_summary(dataset_dir=DATASET_DIR):
-    """Print a summary of the dataset."""
-    valid, dist = validate_dataset(dataset_dir)
-    total = sum(dist.values())
-    print("\n" + "="*50)
+def print_dataset_summary(dataset_root=DATASET_DIR):
+    """Print per-split class counts of the prepared dataset."""
+    dists = {split: get_class_distribution(os.path.join(dataset_root, split)) for split in SPLITS}
+    valid, _ = validate_dataset(os.path.join(dataset_root, "train"))
+    print("\n" + "="*62)
     print("📊 DATASET SUMMARY")
-    print("="*50)
-    for cls, count in dist.items():
-        pct = (count / total * 100) if total > 0 else 0
-        bar = "█" * int(pct / 2)
-        print(f"  {cls:<30} {count:>5} ({pct:>5.1f}%) {bar}")
-    print(f"  {'TOTAL':<30} {total:>5}")
-    print("="*50)
+    print("="*62)
+    print(f"  {'class':<26}" + "".join(f"{s:>10}" for s in SPLITS))
+    for cls in CLASSES:
+        print(f"  {cls:<26}" + "".join(f"{dists[s][cls]:>10}" for s in SPLITS))
+    print(f"  {'TOTAL':<26}" + "".join(f"{sum(dists[s].values()):>10}" for s in SPLITS))
+    print("="*62)
     print(f"Status: {'✅ Valid' if valid else '❌ Insufficient data'}\n")
 
 

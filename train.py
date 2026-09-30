@@ -40,38 +40,31 @@ logger = logging.getLogger("Train")
 
 
 def build_generators(dataset_dir=DATASET_DIR, batch_size=BATCH_SIZE):
-    """Build train/val/test ImageDataGenerators."""
+    """Build train/val ImageDataGenerators from the prepared split folders."""
     # Training augmentation
     train_aug = ImageDataGenerator(
         preprocessing_function=preprocess_input,
-        validation_split=0.2,
         **AUGMENTATION_PARAMS
     )
 
-    # Val/test — only normalization
-    val_aug = ImageDataGenerator(
-        preprocessing_function=preprocess_input,
-        validation_split=0.2
-    )
+    # Val — only normalization
+    val_aug = ImageDataGenerator(preprocessing_function=preprocess_input)
 
     train_gen = train_aug.flow_from_directory(
-        dataset_dir,
+        os.path.join(dataset_dir, "train"),
         target_size=INPUT_SIZE,
         batch_size=batch_size,
         class_mode="categorical",
-        subset="training",
         shuffle=True,
         seed=42
     )
 
     val_gen = val_aug.flow_from_directory(
-        dataset_dir,
+        os.path.join(dataset_dir, "val"),
         target_size=INPUT_SIZE,
         batch_size=batch_size,
         class_mode="categorical",
-        subset="validation",
-        shuffle=False,
-        seed=42
+        shuffle=False
     )
 
     return train_gen, val_gen
@@ -158,17 +151,17 @@ def train(args):
 
     # ── Dataset check
     print_dataset_summary(args.dataset_dir)
-    valid, dist = validate_dataset(args.dataset_dir, min_per_class=5)
+    valid, dist = validate_dataset(os.path.join(args.dataset_dir, "train"), min_per_class=5)
 
     if not valid:
         if args.auto_sample:
             logger.info("Generating sample dataset for testing...")
             create_sample_dataset(n_per_class=50)
+            valid, dist = validate_dataset(os.path.join(args.dataset_dir, "train"), min_per_class=5)
         else:
             logger.error(
-                "Dataset insufficient! Run: python dataset_utils.py --generate-sample\n"
-                "Or use --auto-sample flag.\n"
-                "For real training, download a dataset from Kaggle."
+                "Dataset insufficient! Run: python download_dataset.py\n"
+                "(or --auto-sample for a synthetic smoke-test dataset)."
             )
             sys.exit(1)
 

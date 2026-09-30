@@ -22,7 +22,7 @@ from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.models import load_model
 
 from config import (
-    DATASET_DIR, MODEL_DIR, CLASSES, MASK_MODEL_PATH, INPUT_SIZE, BATCH_SIZE
+    TEST_DIR, MODEL_DIR, CLASSES, MASK_MODEL_PATH, INPUT_SIZE, BATCH_SIZE
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -30,8 +30,8 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("Evaluate")
 
 
-def load_test_generator(dataset_dir=DATASET_DIR, batch_size=BATCH_SIZE):
-    """Load full dataset as test generator (no augmentation)."""
+def load_test_generator(dataset_dir=TEST_DIR, batch_size=BATCH_SIZE):
+    """Load the held-out test split (no augmentation)."""
     gen = ImageDataGenerator(preprocessing_function=preprocess_input)
     test_gen = gen.flow_from_directory(
         dataset_dir,
@@ -43,7 +43,7 @@ def load_test_generator(dataset_dir=DATASET_DIR, batch_size=BATCH_SIZE):
     return test_gen
 
 
-def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=DATASET_DIR, output_dir=None):
+def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=None):
     """
     Full evaluation pipeline for the trained model.
 
@@ -175,8 +175,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate trained mask detector model")
     parser.add_argument("--model", default=MASK_MODEL_PATH,
                         help="Path to .h5 model file")
-    parser.add_argument("--dataset", default=DATASET_DIR,
-                        help="Dataset directory")
+    parser.add_argument("--dataset", default=TEST_DIR,
+                        help="Held-out test directory (one sub-folder per class)")
     parser.add_argument("--output-dir", default=os.path.join(MODEL_DIR, "plots"),
                         help="Directory to save plots")
     args = parser.parse_args()
