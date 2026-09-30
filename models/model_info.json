@@ -1,0 +1,22 @@
+{
+  "backbone": "efficientnetv2b0",
+  "input_size": [
+    160,
+    160
+  ],
+  "classes": [
+    "mask_weared_incorrect",
+    "with_mask",
+    "without_mask"
+  ],
+  "crop_margin": 0.15,
+  "train_counts": {
+    "mask_weared_incorrect": 92,
+    "with_mask": 1934,
+    "without_mask": 432
+  },
+  "epochs_run": 24,
+  "val_accuracy": 0.9964,
+  "val_macro_f1": 0.9813,
+  "seed": 42
+}
