@@ -85,6 +85,7 @@ ALERT_BEEP_DURATION = 300          # ms
 # ─── Tracker ─────────────────────────────────────────────────────────────────
 TRACKER_MAX_DISAPPEARED = 30       # Frames before removing a tracked face
 TRACKER_MAX_DISTANCE = 100         # Max centroid distance to match faces
+TRACK_SMOOTHING = 0.5              # Weight of the newest frame in each face's probability average (1 = off)
 
 # ─── Analytics ───────────────────────────────────────────────────────────────
 VIOLATION_LOG_PATH = os.path.join(LOGS_DIR, "violations.csv")
