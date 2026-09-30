@@ -168,6 +168,33 @@
       </div>
     </section>
 
+    <!-- ── Analyze a Photo ── -->
+    <section class="panel analyze-panel">
+      <div class="panel-header">
+        <h2>🖼 Analyze a Photo</h2>
+        <div class="feed-controls">
+          <label class="btn btn-sm btn-accent" for="photoInput">⬆ Upload photo</label>
+          <input type="file" id="photoInput" accept="image/*" hidden />
+        </div>
+      </div>
+      <div class="analyze-drop" id="analyzeDrop">
+        <span id="analyzeHint">Drop a photo here, or use Upload photo. It is analysed on this server and not stored.</span>
+        <canvas id="analyzeCanvas" class="analyze-canvas" hidden></canvas>
+      </div>
+      <div class="analyze-summary" id="analyzeSummary"></div>
+    </section>
+
+    <!-- ── Model Card ── -->
+    <section class="panel model-panel">
+      <div class="panel-header">
+        <h2>🧠 Model</h2>
+      </div>
+      <div class="summary-grid" id="modelGrid">
+        <div class="summary-item"><span class="summary-label">Loading…</span></div>
+      </div>
+      <p class="model-note">Test = held-out photos never used for training or tuning.</p>
+    </section>
+
   </main>
 
   <!-- ═══ TOAST NOTIFICATION ═══ -->

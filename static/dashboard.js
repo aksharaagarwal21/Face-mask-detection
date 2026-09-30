@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initTimelineChart();
   startPolling();
   refreshLogs();
+  initPhotoAnalysis();
+  loadModelCard();
   showToast('Dashboard loaded — click ▶ Start to begin detection', 'info');
 });
 
@@ -356,6 +358,122 @@ function badgeHTML(label) {
 function downloadLog() {
   window.location.href = '/api/logs/download';
   showToast('⬇ Downloading violations.csv…', 'info');
+}
+
+// ── Analyze a Photo ────────────────────────────────────────────────────────────
+const BOX_COLORS = { with_mask: '#10b981', without_mask: '#ef4444', mask_weared_incorrect: '#f59e0b' };
+const SHORT_LABELS = { with_mask: 'mask', without_mask: 'no mask', mask_weared_incorrect: 'incorrect' };
+
+function initPhotoAnalysis() {
+  const input = document.getElementById('photoInput');
+  const drop = document.getElementById('analyzeDrop');
+  input.addEventListener('change', () => { if (input.files[0]) analyzePhoto(input.files[0]); input.value = ''; });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add('dragover');
+  }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove('dragover');
+  }));
+  drop.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) analyzePhoto(file);
+  });
+}
+
+async function analyzePhoto(file) {
+  if (!file.type.startsWith('image/')) { showToast('Please choose an image file', 'warning'); return; }
+  const summary = document.getElementById('analyzeSummary');
+  summary.textContent = 'Analysing…';
+  const form = new FormData();
+  form.append('image', file);
+  try {
+    const res = await fetch('/api/predict', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    await drawAnalysis(file, data);
+    renderAnalysisSummary(data);
+  } catch (e) {
+    summary.textContent = '';
+    showToast(`Analysis failed: ${e.message}`, 'error');
+  }
+}
+
+function drawAnalysis(file, data) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.getElementById('analyzeCanvas');
+      const ctx = canvas.getContext('2d');
+      // Small photos are drawn larger so crowded labels stay readable
+      const scale = Math.max(1, 800 / img.naturalWidth);
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const line = Math.max(2, Math.round(canvas.width / 400));
+      ctx.font = `${Math.max(11, line * 6)}px Inter, sans-serif`;
+      data.faces.forEach(f => {
+        const [x1, y1, x2, y2] = f.box.map(v => v * scale);
+        const color = BOX_COLORS[f.label] || '#ffffff';
+        ctx.lineWidth = line;
+        ctx.strokeStyle = color;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        const text = `${SHORT_LABELS[f.label] || f.label} ${(f.confidence * 100).toFixed(0)}%`;
+        const tw = ctx.measureText(text).width + 6;
+        const th = parseInt(ctx.font, 10) + 4;
+        ctx.fillStyle = color;
+        ctx.fillRect(x1, Math.max(0, y1 - th), tw, th);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, x1 + 3, Math.max(th - 4, y1 - 4));
+      });
+      document.getElementById('analyzeHint').hidden = true;
+      canvas.hidden = false;
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('the browser could not display this image')); };
+    img.src = url;
+  });
+}
+
+function renderAnalysisSummary(data) {
+  const c = data.counts;
+  const summary = document.getElementById('analyzeSummary');
+  if (!c.total) {
+    summary.textContent = `No faces found (${data.inference_ms} ms).`;
+    return;
+  }
+  summary.innerHTML = [
+    `<span><b>${c.total}</b> face${c.total === 1 ? '' : 's'}</span>`,
+    badgeHTML('with_mask') + ` ${c.with_mask || 0}`,
+    badgeHTML('without_mask') + ` ${c.without_mask || 0}`,
+    badgeHTML('mask_weared_incorrect') + ` ${c.mask_weared_incorrect || 0}`,
+    `<span>Compliance <b style="color:${complianceColor(data.compliance_pct)}">${data.compliance_pct}%</b></span>`,
+    `<span class="mono">${data.inference_ms} ms</span>`,
+  ].join('<span>·</span>');
+}
+
+// ── Model Card ─────────────────────────────────────────────────────────────────
+async function loadModelCard() {
+  const grid = document.getElementById('modelGrid');
+  try {
+    const m = await (await fetch('/api/model')).json();
+    const pct = v => (v == null ? '—' : `${(v * 100).toFixed(2)}%`);
+    const e2e = (m.end_to_end || []).find(r => r.backend === 'yunet') || {};
+    const items = [
+      ['Backbone', m.backbone || '—'],
+      ['Input', m.input_size ? `${m.input_size[0]}×${m.input_size[1]}` : '—'],
+      ['Test accuracy', pct(m.test && m.test.accuracy)],
+      ['Test macro-F1', m.test && m.test.macro_f1 != null ? m.test.macro_f1.toFixed(3) : '—'],
+      ['Calibration (ECE)', m.test && m.test.ece != null ? m.test.ece.toFixed(3) : '—'],
+      ['End-to-end (photos)', pct(e2e.end_to_end_accuracy)],
+    ];
+    grid.innerHTML = items.map(([k, v]) =>
+      `<div class="summary-item"><span class="summary-label">${k}</span>` +
+      `<span class="summary-value mono">${v}</span></div>`).join('');
+  } catch (e) {
+    grid.innerHTML = '<div class="summary-item"><span class="summary-label">Model info unavailable</span></div>';
+  }
 }
 
 // ── Toast ──────────────────────────────────────────────────────────────────────
