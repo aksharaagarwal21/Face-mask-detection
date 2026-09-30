@@ -39,6 +39,9 @@ Thumbs.db
 test_output.txt
 test_imports.py
 
+# Test cache
+.pytest_cache/
+
 # Pyre
 .pyre/
 .pyre_configuration
