@@ -25,7 +25,8 @@ from utils import (
 )
 from config import (
     CAMERA_INDEX, CLASS_COLORS, FRAME_WIDTH, FRAME_HEIGHT,
-    MASK_CONFIDENCE_THRESHOLD, SCREENSHOTS_DIR
+    MASK_CONFIDENCE_THRESHOLD, SCREENSHOTS_DIR, FACE_CONFIDENCE_THRESHOLD,
+    FACE_DETECTOR_BACKEND, TRACK_SMOOTHING
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -39,9 +40,9 @@ def run(args):
     logger.info(f"Starting session: {session_id}")
 
     # ── Initialize components
-    face_detector = FaceDetector(confidence_threshold=args.face_conf)
-    mask_detector = MaskDetector()
-    tracker = CentroidTracker()
+    face_detector = FaceDetector(confidence_threshold=args.face_conf, backend=args.backend)
+    mask_detector = MaskDetector(confidence_threshold=args.mask_conf, tta=not args.no_tta)
+    tracker = CentroidTracker(smoothing=1.0 if args.no_smoothing else TRACK_SMOOTHING)
     alert_system = AlertSystem(enabled=not args.no_alert)
     analytics = SessionAnalytics(session_id)
     violation_logger = ViolationLogger()
@@ -94,16 +95,10 @@ def run(args):
         # ── Detect faces
         locs, rois = face_detector.detect_faces_rois(frame)
 
-        # ── Classify masks (batch)
-        predictions = mask_detector.predict_batch(rois) if rois else []
-
-        # ── Build detection list for tracker + analytics
+        # ── Classify masks (batch), then smooth each face's scores over time
+        probs = mask_detector.predict_probs(rois)
         rects = [(s, t, e, b) for (s, t, e, b, _) in locs]
-        labels = [pred[0] for pred in predictions]
-        confs = [pred[1] for pred in predictions]
-
-        # ── Update tracker
-        tracker.update(rects, labels)
+        tracker.update(rects, probs=probs)
         tracked = tracker.get_all()
 
         # ── Frame stats
@@ -115,9 +110,8 @@ def run(args):
         has_violation_this_frame = False
 
         for i, (startX, startY, endX, endY, face_conf) in enumerate(locs):
-            if i >= len(predictions):
-                break
-            label, conf = predictions[i]
+            track_id = tracker.detection_ids[i]
+            label, conf = tracker.smoothed(track_id)
             color = CLASS_COLORS.get(label, (255, 255, 255))
 
             # Draw bounding box
@@ -136,7 +130,7 @@ def run(args):
                     cy = (startY + endY) // 2
                     violation_logger.log(
                         session_id=session_id,
-                        face_id=i,
+                        face_id=track_id,
                         label=label,
                         confidence=conf,
                         frame_number=frame_count,
@@ -231,8 +225,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Real-time face mask detection")
     parser.add_argument("--camera", type=int, default=CAMERA_INDEX,
                         help="Camera device index (default: 0)")
-    parser.add_argument("--face-conf", type=float, default=0.5,
+    parser.add_argument("--face-conf", type=float, default=FACE_CONFIDENCE_THRESHOLD,
                         help="Face detection confidence threshold")
+    parser.add_argument("--backend", default=FACE_DETECTOR_BACKEND, choices=["yunet", "ssd"],
+                        help="Face detector backend")
+    parser.add_argument("--no-tta", action="store_true",
+                        help="Disable flip test-time augmentation (faster, slightly less accurate)")
+    parser.add_argument("--no-smoothing", action="store_true",
+                        help="Disable per-face temporal smoothing of predictions")
     parser.add_argument("--mask-conf", type=float, default=MASK_CONFIDENCE_THRESHOLD,
                         help="Mask classification confidence threshold")
     parser.add_argument("--no-alert", action="store_true",
