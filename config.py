@@ -21,12 +21,16 @@ LABEL_ENCODER_PATH = os.path.join(MODEL_DIR, "label_encoder.pkl")
 MODEL_INFO_PATH = os.path.join(MODEL_DIR, "model_info.json")      # backbone, input size, val metrics
 METRICS_PATH = os.path.join(MODEL_DIR, "test_metrics.json")       # written by evaluate.py
 
-# Face Detector (Caffe SSD)
+# Face Detector: YuNet (default) or the older Caffe SSD
+FACE_DETECTOR_BACKEND = "yunet"    # yunet | ssd
+YUNET_MODEL_PATH = os.path.join(MODEL_DIR, "face_detection_yunet_2023mar.onnx")
 FACE_PROTOTXT_PATH = os.path.join(MODEL_DIR, "deploy.prototxt")
 FACE_WEIGHTS_PATH = os.path.join(MODEL_DIR, "res10_300x300_ssd_iter_140000.caffemodel")
 
 # ─── Detection Parameters ─────────────────────────────────────────────────────
 FACE_CONFIDENCE_THRESHOLD = 0.5    # Min confidence to consider a face detection valid
+FACE_NMS_THRESHOLD = 0.3           # IoU above which overlapping face boxes are merged
+MIN_DETECT_FACE_SIZE = 10          # Ignore detections smaller than this (px)
 MASK_CONFIDENCE_THRESHOLD = 0.6    # Min confidence for mask prediction
 INPUT_SIZE = (160, 160)            # Model input size (median training face is ~20px, so 224 buys nothing)
 BACKBONE = "efficientnetv2b0"      # efficientnetv2b0 | efficientnetv2b1 | mobilenetv2 (see model.py)
