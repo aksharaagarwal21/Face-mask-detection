@@ -98,6 +98,19 @@ AUGMENTATION_PARAMS = {
     "brightness_range": [0.7, 1.3],
 }
 
+# tf.data pipeline (data_pipeline.py)
+AUGMENTATION = {
+    "rotation": 0.05,              # fraction of a full turn (~18°)
+    "zoom": 0.15,                  # mimics detector boxes being a bit loose or tight
+    "shift": 0.08,
+    "brightness": 0.25,
+    "contrast": 0.25,
+    "low_res_prob": 0.35,          # downscale to 12-48px and back: most real faces are tiny
+    "low_res_range": (12, 48),
+    "grayscale_prob": 0.05,        # IR / low-light cameras
+}
+BALANCE_POWER = 0.5                # class sampling ∝ count**power (0 = uniform, 1 = natural)
+
 # ─── Heatmap ─────────────────────────────────────────────────────────────────
 HEATMAP_RESOLUTION = (720, 1280)
 HEATMAP_DECAY = 0.98              # How fast old positions fade
