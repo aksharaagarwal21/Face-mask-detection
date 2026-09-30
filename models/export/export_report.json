@@ -1,0 +1,30 @@
+{
+  "keras": {
+    "file": "mask_detector.keras",
+    "size_mb": 24.75,
+    "test_accuracy": 0.9897,
+    "latency_ms_per_face": 33.64
+  },
+  "test_faces": 582,
+  "num_threads": null,
+  "fp16": {
+    "file": "export/mask_detector_fp16.tflite",
+    "size_mb": 11.94,
+    "test_accuracy": 0.9897,
+    "disagreement_with_keras": 0.0,
+    "max_abs_prob_diff": 0.0021,
+    "latency_ms_per_face": 20.48,
+    "convert_seconds": 26.5,
+    "passed": true
+  },
+  "int8": {
+    "file": "export/mask_detector_int8.tflite",
+    "size_mb": 6.65,
+    "test_accuracy": 0.9897,
+    "disagreement_with_keras": 0.0,
+    "max_abs_prob_diff": 0.1488,
+    "latency_ms_per_face": 27.59,
+    "convert_seconds": 32.4,
+    "passed": true
+  }
+}

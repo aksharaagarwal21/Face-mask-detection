@@ -45,3 +45,6 @@ test_imports.py
 
 # Training checkpoints (large, the final model is models/mask_detector.keras)
 models/checkpoints/
+
+# TFLite exports (regenerate with: python export.py)
+models/export/*.tflite
