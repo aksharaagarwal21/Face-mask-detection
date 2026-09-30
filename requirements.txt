@@ -1,13 +1,12 @@
-tensorflow>=2.10.0
-opencv-python>=4.7.0
-numpy>=1.23.0
-scikit-learn>=1.2.0
-imutils>=0.5.4
-flask>=2.3.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-tqdm>=4.65.0
-Pillow>=9.5.0
-pandas>=1.5.0
-scipy>=1.10.0
-werkzeug>=2.3.0
+# Tested with Python 3.13, TensorFlow 2.21 / Keras 3.13, OpenCV 4.13 on CPU (Windows 11)
+tensorflow>=2.16          # ships Keras 3, which the training code and the saved .keras model need
+opencv-python>=4.8        # cv2.FaceDetectorYN (YuNet face detector)
+numpy>=1.23
+scipy>=1.10               # tracker assignment, temperature fitting
+scikit-learn>=1.2         # metrics, photo-level train/val/test split
+flask>=2.3
+matplotlib>=3.7
+seaborn>=0.12
+tqdm>=4.65
+Pillow>=9.5
+kagglehub>=0.2            # download_dataset.py
