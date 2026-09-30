@@ -51,6 +51,7 @@ def _detection_loop():
     """Background thread: captures webcam + runs detection + updates global state."""
     from face_detector import FaceDetector
     from mask_detector import MaskDetector
+    from tracker import CentroidTracker
     from analytics import SessionAnalytics
     from logger import ViolationLogger
     from utils import (
@@ -67,6 +68,7 @@ def _detection_loop():
     try:
         face_detector = FaceDetector()
         mask_detector = MaskDetector()
+        tracker = CentroidTracker()
         alert_system = AlertSystem()
         analytics = SessionAnalytics(session_id)
         violation_logger = ViolationLogger()
@@ -89,6 +91,7 @@ def _detection_loop():
     _session_stats["stream_active"] = True
     frame_count = 0
     timeline_interval = 30   # Record timeline snapshot every 30 frames
+    last_logged = {}         # track id -> frame of its last violation log entry
 
     logger.info("🟢 Detection thread started")
 
@@ -101,9 +104,9 @@ def _detection_loop():
         frame_count += 1
         fps_counter.tick()
 
-        # ── Detect + classify
+        # ── Detect + classify, then smooth each face's scores over time
         locs, rois = face_detector.detect_faces_rois(frame)
-        predictions = mask_detector.predict_batch(rois) if rois else []
+        tracker.update([loc[:4] for loc in locs], probs=mask_detector.predict_probs(rois))
 
         frame_stats = {"total": 0, "with_mask": 0,
                        "without_mask": 0, "mask_weared_incorrect": 0}
@@ -111,9 +114,8 @@ def _detection_loop():
         has_violation = False
 
         for i, (startX, startY, endX, endY, _) in enumerate(locs):
-            if i >= len(predictions):
-                break
-            label, conf = predictions[i]
+            track_id = tracker.detection_ids[i]
+            label, conf = tracker.smoothed(track_id)
             color = CLASS_COLORS.get(label, (255, 255, 255))
             draw_detection_box(frame, startX, startY, endX, endY, label, conf, color)
             frame_stats["total"] += 1
@@ -121,9 +123,11 @@ def _detection_loop():
 
             if mask_detector.is_violation(label, conf):
                 has_violation = True
-                if frame_count % 60 == 0:
+                # at most one log entry per face every 60 frames
+                if frame_count - last_logged.get(track_id, -60) >= 60:
+                    last_logged[track_id] = frame_count
                     violation_logger.log(
-                        session_id=session_id, face_id=i,
+                        session_id=session_id, face_id=track_id,
                         label=label, confidence=conf,
                         frame_number=frame_count,
                         bbox=(startX, startY, endX - startX, endY - startY)
