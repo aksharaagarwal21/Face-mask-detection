@@ -1,6 +1,10 @@
 # pyre-unsafe
 """
 detect_video.py — Video file face mask detection with annotated output
+
+Faces are tracked across frames and each face's class probabilities are
+smoothed over time (tracker.py), the same as in detect_realtime.py, so a
+single blurry frame doesn't flip a label or fire a violation.
 """
 
 import cv2
@@ -15,13 +19,18 @@ from datetime import datetime
 
 from face_detector import FaceDetector
 from mask_detector import MaskDetector
+from tracker import CentroidTracker
 from analytics import SessionAnalytics
 from logger import ViolationLogger, SessionLogger
 from utils import (
     FPSCounter, draw_detection_box, draw_stats_overlay,
     draw_alert_banner, compute_compliance_pct
 )
-from config import CLASS_COLORS, MASK_CONFIDENCE_THRESHOLD
+from config import (
+    CLASS_COLORS, FACE_CONFIDENCE_THRESHOLD, FACE_DETECTOR_BACKEND, MASK_RUNTIME, TRACK_SMOOTHING
+)
+
+VIOLATION_LOG_EVERY = 60   # frames between log entries for the same tracked face
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
@@ -38,8 +47,9 @@ def process_video(args):
     logger.info(f"Processing video: {args.video}")
 
     # ── Setup
-    face_detector = FaceDetector(confidence_threshold=args.face_conf)
-    mask_detector = MaskDetector()
+    face_detector = FaceDetector(confidence_threshold=args.face_conf, backend=args.backend)
+    mask_detector = MaskDetector(runtime=args.runtime)
+    tracker = CentroidTracker(smoothing=1.0 if args.no_smoothing else TRACK_SMOOTHING)
     analytics = SessionAnalytics(session_id)
     violation_logger = ViolationLogger()
     session_logger = SessionLogger()
@@ -68,7 +78,11 @@ def process_video(args):
     frame_count = 0
     start_time = time.time()
     frame_stats = {"total": 0, "with_mask": 0,
-                   "without_mask": 0, "mask_weared_incorrect": 0}
+                   "without_mask": 0, "mask_weared_incorrect": 0, "compliance_pct": 0.0}
+    last_boxes = []        # (box, label, conf) from the latest detection, redrawn on skipped frames
+    last_logged = {}       # track id -> frame of its last violation log entry
+    has_violation = False
+    every = args.skip_frames + 1
 
     # ── Process with progress bar
     with tqdm(total=total_frames, desc="Processing", unit="frame",
@@ -82,56 +96,58 @@ def process_video(args):
             frame_count += 1
             fps_counter.tick()
 
-            # Skip frames if requested
-            if args.skip_frames > 0 and frame_count % (args.skip_frames + 1) != 0:
-                pbar.update(1)
-                continue
+            # ── Detect + classify on every `every`-th frame (starting with the first).
+            # Skipped frames are still written, with the latest boxes, so the output
+            # keeps the input's length and speed.
+            if (frame_count - 1) % every == 0:
+                locs, rois = face_detector.detect_faces_rois(frame)
+                probs = mask_detector.predict_probs(rois)
+                tracker.update([loc[:4] for loc in locs], probs=probs)
 
-            # ── Detect + classify
-            locs, rois = face_detector.detect_faces_rois(frame)
-            predictions = mask_detector.predict_batch(rois) if rois else []
+                frame_stats = {"total": 0, "with_mask": 0,
+                               "without_mask": 0, "mask_weared_incorrect": 0}
+                analytics_dets = []
+                last_boxes = []
+                has_violation = False
 
-            # Reset frame stats
-            frame_stats = {"total": 0, "with_mask": 0,
-                           "without_mask": 0, "mask_weared_incorrect": 0}
-            analytics_dets = []
-            has_violation = False
+                for i, (startX, startY, endX, endY, _) in enumerate(locs):
+                    track_id = tracker.detection_ids[i]
+                    label, conf = tracker.smoothed(track_id)
+                    last_boxes.append(((startX, startY, endX, endY), label, conf))
+                    frame_stats["total"] += 1
+                    frame_stats[label] = frame_stats.get(label, 0) + 1
 
-            for i, (startX, startY, endX, endY, _) in enumerate(locs):
-                if i >= len(predictions):
-                    break
-                label, conf = predictions[i]
-                color = CLASS_COLORS.get(label, (255, 255, 255))
-                draw_detection_box(frame, startX, startY, endX, endY, label, conf, color)
+                    if mask_detector.is_violation(label, conf):
+                        has_violation = True
+                        # at most one log entry per face every VIOLATION_LOG_EVERY frames
+                        if frame_count - last_logged.get(track_id, -VIOLATION_LOG_EVERY) >= VIOLATION_LOG_EVERY:
+                            last_logged[track_id] = frame_count
+                            violation_logger.log(
+                                session_id=session_id,
+                                face_id=track_id,
+                                label=label,
+                                confidence=conf,
+                                frame_number=frame_count,
+                                bbox=(startX, startY, endX - startX, endY - startY)
+                            )
 
-                frame_stats["total"] += 1
-                frame_stats[label] = frame_stats.get(label, 0) + 1
+                    analytics_dets.append({
+                        "label": label,
+                        "confidence": conf,
+                        "bbox": (startX, startY, endX - startX, endY - startY),
+                        "centroid": ((startX + endX) // 2, (startY + endY) // 2)
+                    })
 
-                if mask_detector.is_violation(label, conf):
-                    has_violation = True
-                    if frame_count % 60 == 0:
-                        violation_logger.log(
-                            session_id=session_id,
-                            face_id=i,
-                            label=label,
-                            confidence=conf,
-                            frame_number=frame_count,
-                            bbox=(startX, startY, endX - startX, endY - startY)
-                        )
+                analytics.update(analytics_dets)
+                frame_stats["compliance_pct"] = compute_compliance_pct(frame_stats)
 
-                analytics_dets.append({
-                    "label": label,
-                    "confidence": conf,
-                    "bbox": (startX, startY, endX - startX, endY - startY),
-                    "centroid": ((startX + endX) // 2, (startY + endY) // 2)
-                })
-
-            analytics.update(analytics_dets)
-            frame_stats["compliance_pct"] = compute_compliance_pct(frame_stats)
+            for (x1, y1, x2, y2), label, conf in last_boxes:
+                draw_detection_box(frame, x1, y1, x2, y2, label, conf,
+                                   CLASS_COLORS.get(label, (255, 255, 255)))
             draw_stats_overlay(frame, frame_stats, fps_counter.fps())
 
             if has_violation:
-                draw_alert_banner(frame, "⚠  MASK VIOLATION DETECTED")
+                draw_alert_banner(frame, "MASK VIOLATION DETECTED")
 
             # ── Frame counter
             cv2.putText(frame, f"Frame: {frame_count}/{total_frames}",
@@ -166,8 +182,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Video file face mask detection")
     parser.add_argument("--video", required=True, help="Path to input video file")
     parser.add_argument("--output", default=None, help="Output video path (optional)")
-    parser.add_argument("--face-conf", type=float, default=0.5)
+    parser.add_argument("--face-conf", type=float, default=FACE_CONFIDENCE_THRESHOLD)
+    parser.add_argument("--backend", default=FACE_DETECTOR_BACKEND, choices=["yunet", "ssd"])
+    parser.add_argument("--runtime", default=MASK_RUNTIME, choices=["auto", "keras", "tflite"])
+    parser.add_argument("--no-smoothing", action="store_true",
+                        help="Label each frame on its own instead of smoothing per face")
     parser.add_argument("--skip-frames", type=int, default=0,
-                        help="Number of frames to skip between detections (0=none)")
+                        help="Frames between detections (0 = detect on every frame); "
+                             "skipped frames reuse the latest boxes")
     args = parser.parse_args()
     process_video(args)
