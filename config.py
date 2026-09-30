@@ -4,6 +4,15 @@ config.py — Centralized configuration for Face Mask Detection System
 """
 
 import os
+import sys
+
+# Windows consoles default to cp1252, which can't encode the emoji and box
+# characters in the scripts' output: printing them crashes as soon as stdout
+# is piped or redirected (e.g. `python evaluate.py > log.txt`). Every entry
+# point imports this module, so switch both streams to UTF-8 here.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure") and (_stream.encoding or "").lower() not in ("utf-8", "utf8"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 # ─── Base Paths ───────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
