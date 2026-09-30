@@ -7,9 +7,9 @@ import os
 import pickle
 import logging
 import numpy as np
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-from utils import preprocess_face
-from config import MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD
+from config import (
+    MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD, INPUT_SIZE
+)
 
 logger = logging.getLogger("MaskDetector")
 
@@ -30,13 +30,13 @@ class MaskDetector:
         logger.info(f"MaskDetector initialized | classes: {self.classes}")
 
     def _load_model(self, path):
-        from tensorflow.keras.models import load_model
+        import keras
         if not os.path.exists(path):
             raise FileNotFoundError(
                 f"Trained model not found at: {path}\n"
                 "Please train the model first: python train.py"
             )
-        model = load_model(path)
+        model = keras.models.load_model(path, compile=False)
         logger.info(f"✅ Model loaded from {path}")
         return model
 
@@ -50,13 +50,11 @@ class MaskDetector:
         return CLASSES
 
     def _preprocess(self, face_roi):
-        """Preprocess a single face ROI for the model."""
+        """Resize a BGR face ROI to the model input (the model scales pixels itself)."""
         import cv2
-        face = cv2.resize(face_roi, (224, 224))
+        face = cv2.resize(face_roi, (INPUT_SIZE[1], INPUT_SIZE[0]))
         face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
-        face = face.astype("float32")
-        face = preprocess_input(face)       # MobileNetV2-specific normalization
-        return face
+        return face.astype("float32")
 
     def predict_single(self, face_roi):
         """

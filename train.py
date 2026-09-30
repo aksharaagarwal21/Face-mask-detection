@@ -21,7 +21,6 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import (
     ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, CSVLogger
 )
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 from model import build_model, unfreeze_top_layers
 from dataset_utils import (
@@ -42,13 +41,10 @@ logger = logging.getLogger("Train")
 def build_generators(dataset_dir=DATASET_DIR, batch_size=BATCH_SIZE):
     """Build train/val ImageDataGenerators from the prepared split folders."""
     # Training augmentation
-    train_aug = ImageDataGenerator(
-        preprocessing_function=preprocess_input,
-        **AUGMENTATION_PARAMS
-    )
+    train_aug = ImageDataGenerator(**AUGMENTATION_PARAMS)
 
-    # Val — only normalization
-    val_aug = ImageDataGenerator(preprocessing_function=preprocess_input)
+    # Val — no augmentation (the model does its own pixel scaling)
+    val_aug = ImageDataGenerator()
 
     train_gen = train_aug.flow_from_directory(
         os.path.join(dataset_dir, "train"),
@@ -208,7 +204,7 @@ def train(args):
         logger.info("PHASE 2: Fine-tuning top MobileNetV2 layers")
         logger.info(f"{'='*60}")
 
-        unfreeze_top_layers(model, num_layers=30)
+        unfreeze_top_layers(model)
         model.compile(
             optimizer=Adam(learning_rate=args.fine_tune_lr),
             loss="categorical_crossentropy",

@@ -18,8 +18,7 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import label_binarize
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-from tensorflow.keras.models import load_model
+from keras.models import load_model
 
 from config import (
     TEST_DIR, MODEL_DIR, CLASSES, MASK_MODEL_PATH, INPUT_SIZE, BATCH_SIZE
@@ -32,7 +31,7 @@ logger = logging.getLogger("Evaluate")
 
 def load_test_generator(dataset_dir=TEST_DIR, batch_size=BATCH_SIZE):
     """Load the held-out test split (no augmentation)."""
-    gen = ImageDataGenerator(preprocessing_function=preprocess_input)
+    gen = ImageDataGenerator()   # raw pixels — the model does its own scaling
     test_gen = gen.flow_from_directory(
         dataset_dir,
         target_size=INPUT_SIZE,
@@ -58,7 +57,7 @@ def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=
 
     # ── Load model
     logger.info(f"Loading model: {model_path}")
-    model = load_model(model_path)
+    model = load_model(model_path, compile=False)
 
     # ── Load test data
     logger.info("Loading dataset...")
@@ -174,7 +173,7 @@ def _plot_roc_curves(y_true_bin, y_prob, class_names, n_classes, output_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate trained mask detector model")
     parser.add_argument("--model", default=MASK_MODEL_PATH,
-                        help="Path to .h5 model file")
+                        help="Path to the .keras model file")
     parser.add_argument("--dataset", default=TEST_DIR,
                         help="Held-out test directory (one sub-folder per class)")
     parser.add_argument("--output-dir", default=os.path.join(MODEL_DIR, "plots"),

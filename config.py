@@ -16,7 +16,7 @@ LOGS_DIR = os.path.join(BASE_DIR, "logs")
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 
 # ─── Model Paths ──────────────────────────────────────────────────────────────
-MASK_MODEL_PATH = os.path.join(MODEL_DIR, "mask_detector.h5")
+MASK_MODEL_PATH = os.path.join(MODEL_DIR, "mask_detector.keras")
 LABEL_ENCODER_PATH = os.path.join(MODEL_DIR, "label_encoder.pkl")
 
 # Face Detector (Caffe SSD)
@@ -26,7 +26,8 @@ FACE_WEIGHTS_PATH = os.path.join(MODEL_DIR, "res10_300x300_ssd_iter_140000.caffe
 # ─── Detection Parameters ─────────────────────────────────────────────────────
 FACE_CONFIDENCE_THRESHOLD = 0.5    # Min confidence to consider a face detection valid
 MASK_CONFIDENCE_THRESHOLD = 0.6    # Min confidence for mask prediction
-INPUT_SIZE = (224, 224)            # Model input image size
+INPUT_SIZE = (160, 160)            # Model input size (median training face is ~20px, so 224 buys nothing)
+BACKBONE = "efficientnetv2b0"      # efficientnetv2b0 | efficientnetv2b1 | mobilenetv2 (see model.py)
 
 # ─── Class Labels ─────────────────────────────────────────────────────────────
 CLASSES = ["mask_weared_incorrect", "with_mask", "without_mask"]
