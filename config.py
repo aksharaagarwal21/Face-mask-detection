@@ -18,6 +18,8 @@ SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 # ─── Model Paths ──────────────────────────────────────────────────────────────
 MASK_MODEL_PATH = os.path.join(MODEL_DIR, "mask_detector.keras")
 LABEL_ENCODER_PATH = os.path.join(MODEL_DIR, "label_encoder.pkl")
+MODEL_INFO_PATH = os.path.join(MODEL_DIR, "model_info.json")      # backbone, input size, val metrics
+METRICS_PATH = os.path.join(MODEL_DIR, "test_metrics.json")       # written by evaluate.py
 
 # Face Detector (Caffe SSD)
 FACE_PROTOTXT_PATH = os.path.join(MODEL_DIR, "deploy.prototxt")
@@ -53,10 +55,14 @@ TRAIN_SPLIT = 0.7
 VAL_SPLIT = 0.15
 TEST_SPLIT = 0.15
 BATCH_SIZE = 32
-INITIAL_LR = 1e-4
-EPOCHS = 20
-FINE_TUNE_EPOCHS = 10
-FINE_TUNE_LR = 1e-5
+HEAD_EPOCHS = 3                    # Phase 1: head only, backbone frozen
+INITIAL_LR = 1e-3                  # Phase 1 learning rate
+EPOCHS = 30                        # Phase 2: full fine-tuning
+FINE_TUNE_LR = 3e-4                # Phase 2 peak LR (cosine decay after warmup)
+WARMUP_EPOCHS = 1
+WEIGHT_DECAY = 1e-4                # AdamW
+LABEL_SMOOTHING = 0.1
+EARLY_STOP_PATIENCE = 10           # epochs without val macro-F1 improvement
 
 # ─── Camera / Video ──────────────────────────────────────────────────────────
 CAMERA_INDEX = 0                   # Default webcam (0 = primary)
@@ -87,18 +93,6 @@ FLASK_DEBUG = False
 STREAM_QUALITY = 80                # JPEG quality for MJPEG stream (1-100)
 
 # ─── Augmentation ────────────────────────────────────────────────────────────
-AUGMENTATION_PARAMS = {
-    "rotation_range": 20,
-    "zoom_range": 0.15,
-    "width_shift_range": 0.2,
-    "height_shift_range": 0.2,
-    "shear_range": 0.15,
-    "horizontal_flip": True,
-    "fill_mode": "nearest",
-    "brightness_range": [0.7, 1.3],
-}
-
-# tf.data pipeline (data_pipeline.py)
 AUGMENTATION = {
     "rotation": 0.05,              # fraction of a full turn (~18°)
     "zoom": 0.15,                  # mimics detector boxes being a bit loose or tight

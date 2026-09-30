@@ -42,3 +42,6 @@ test_imports.py
 # Pyre
 .pyre/
 .pyre_configuration
+
+# Training checkpoints (large, the final model is models/mask_detector.keras)
+models/checkpoints/
