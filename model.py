@@ -35,19 +35,17 @@ def build_model(num_classes=3, freeze_base=True):
     Returns:
         Compiled Keras Model
     """
-    # Base model
+    # Base model — kept as a nested sub-model so unfreeze_top_layers() can find it
+    inputs = Input(shape=(INPUT_SIZE[0], INPUT_SIZE[1], 3))
     base_model = MobileNetV2(
         weights="imagenet",
         include_top=False,
-        input_tensor=Input(shape=(INPUT_SIZE[0], INPUT_SIZE[1], 3))
+        input_shape=(INPUT_SIZE[0], INPUT_SIZE[1], 3)
     )
+    base_model.trainable = not freeze_base
 
-    if freeze_base:
-        for layer in base_model.layers:
-            layer.trainable = False
-
-    # Custom classification head
-    x = base_model.output
+    # training=False keeps BatchNorm statistics fixed, even while fine-tuning
+    x = base_model(inputs, training=False)
     x = GlobalAveragePooling2D()(x)
 
     x = Dense(256, activation="relu", kernel_regularizer=l2(1e-4))(x)
@@ -60,7 +58,7 @@ def build_model(num_classes=3, freeze_base=True):
 
     predictions = Dense(num_classes, activation="softmax")(x)
 
-    model = Model(inputs=base_model.input, outputs=predictions)
+    model = Model(inputs=inputs, outputs=predictions)
 
     return model
 
@@ -68,14 +66,15 @@ def build_model(num_classes=3, freeze_base=True):
 def unfreeze_top_layers(model, num_layers=30):
     """
     Unfreeze the top N layers of the MobileNetV2 base for fine-tuning.
+    BatchNorm layers stay frozen so small batches don't wreck their statistics.
     """
-    base = model.layers[0] if hasattr(model.layers[0], 'layers') else model
-    # Find MobileNetV2 base layer
-    for layer in model.layers:
-        if hasattr(layer, 'layers'):  # It's the MobileNetV2 sub-model
-            for sub_layer in layer.layers[-num_layers:]:
-                sub_layer.trainable = True
-            break
+    base = next(layer for layer in model.layers if isinstance(layer, Model))
+    base.trainable = True
+    for i, layer in enumerate(base.layers):
+        layer.trainable = (
+            i >= len(base.layers) - num_layers
+            and not isinstance(layer, BatchNormalization)
+        )
 
 
 def load_trained_model(path=None):
