@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import time
 from collections import deque
-from config import CLASS_COLORS, INPUT_SIZE
+from config import CLASS_COLORS, INPUT_SIZE, CROP_MARGIN
 
 
 # ─── FPS Calculator ───────────────────────────────────────────────────────────
@@ -107,6 +107,33 @@ def draw_tracker_id(frame, cx, cy, track_id):
 
 
 # ─── Frame Processing ─────────────────────────────────────────────────────────
+def square_box(box, margin=CROP_MARGIN):
+    """
+    Square box centred on a face box, grown by `margin` of the face size on
+    each side. Training crops and live crops both go through this, so the
+    classifier always sees faces framed the same way.
+    """
+    x1, y1, x2, y2 = box[:4]
+    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    side = max(x2 - x1, y2 - y1) * (1 + 2 * margin)
+    sx1 = int(round(cx - side / 2.0))
+    sy1 = int(round(cy - side / 2.0))
+    side = max(int(round(side)), 1)
+    return sx1, sy1, sx1 + side, sy1 + side
+
+
+def crop_face(image, box, margin=CROP_MARGIN):
+    """Square context crop of a face; parts outside the image are edge-padded."""
+    h, w = image.shape[:2]
+    sx1, sy1, sx2, sy2 = square_box(box, margin)
+    crop = image[max(0, sy1):min(h, sy2), max(0, sx1):min(w, sx2)]
+    pad_t, pad_b = max(0, -sy1), max(0, sy2 - h)
+    pad_l, pad_r = max(0, -sx1), max(0, sx2 - w)
+    if crop.size and (pad_t or pad_b or pad_l or pad_r):
+        crop = cv2.copyMakeBorder(crop, pad_t, pad_b, pad_l, pad_r, cv2.BORDER_REPLICATE)
+    return crop
+
+
 def preprocess_face(face_roi, target_size=INPUT_SIZE):
     """Resize and normalize a face ROI for the mask classifier."""
     face = cv2.resize(face_roi, target_size)

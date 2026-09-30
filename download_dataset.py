@@ -1,18 +1,24 @@
 # pyre-unsafe
 import os
 import sys
+import csv
 import shutil
 import logging
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from PIL import Image
+
+import cv2
+import numpy as np
+
+from config import (
+    DATASET_DIR, CLASSES, CROP_MARGIN, MIN_FACE_SIZE, SPLIT_SEED,
+    VAL_SPLIT, TEST_SPLIT
+)
+from utils import crop_face
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("DownloadDataset")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATASET_DIR = os.path.join(BASE_DIR, "dataset")
-CLASSES = ["with_mask", "without_mask", "mask_weared_incorrect"]
+SPLITS = ("train", "val", "test")
 
 
 def download_kaggle_dataset():
@@ -116,109 +122,122 @@ def parse_annotation(xml_path):
         return []
 
 
-def prepare_dataset(source_path, output_dir=DATASET_DIR, padding=15, min_size=30):
+def split_by_image(faces, seed=SPLIT_SEED):
     """
-    Process downloaded dataset: parse XMLs, crop faces, save to class folders.
-    
+    Assign each source image to train/val/test.
+
+    Faces from one photo share lighting, camera and often the same people, so
+    splitting per face would leak near-duplicates into val/test. Splitting per
+    image (stratified on face labels) keeps the test score honest.
+    """
+    from sklearn.model_selection import StratifiedGroupKFold
+
+    n_folds = 20
+    n_test = round(TEST_SPLIT * n_folds)
+    n_val = round(VAL_SPLIT * n_folds)
+    labels = [f["label"] for f in faces]
+    groups = [f["image"] for f in faces]
+
+    sgkf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    split_of_image = {}
+    for fold, (_, idx) in enumerate(sgkf.split(np.zeros(len(faces)), labels, groups)):
+        split = "test" if fold < n_test else "val" if fold < n_test + n_val else "train"
+        for i in idx:
+            split_of_image[groups[i]] = split
+    return split_of_image
+
+
+def prepare_dataset(source_path, output_dir=DATASET_DIR, margin=CROP_MARGIN,
+                    min_size=MIN_FACE_SIZE):
+    """
+    Process downloaded dataset: parse XMLs, crop faces, save to split/class folders.
+
+    Output layout:
+        dataset/{train,val,test}/{with_mask,without_mask,mask_weared_incorrect}/
+        dataset/manifest.csv   (one row per crop: split, label, source image, box)
+
     Args:
         source_path: Path to downloaded Kaggle dataset
         output_dir: Where to save cropped face images
-        padding: Pixels to add around each face crop for context
-        min_size: Minimum face crop dimension (skip tiny faces)
+        margin: Context around each face, as a fraction of face size (see utils.crop_face)
+        min_size: Skip faces whose shorter side is below this many pixels
     """
     img_dir, ann_dir = find_dataset_dirs(source_path)
     logger.info(f"📂 Images dir:      {img_dir}")
     logger.info(f"📂 Annotations dir: {ann_dir}")
-    
-    # Count XML files
-    xml_files = [f for f in os.listdir(ann_dir) if f.endswith('.xml')]
+
+    xml_files = sorted(f for f in os.listdir(ann_dir) if f.endswith('.xml'))
     logger.info(f"Found {len(xml_files)} annotation files")
-    
-    # Create output class directories
-    for cls in CLASSES:
-        os.makedirs(os.path.join(output_dir, cls), exist_ok=True)
-    
-    counts = {cls: 0 for cls in CLASSES}
-    skipped = 0
-    processed_images = 0
-    
-    for i, xml_file in enumerate(xml_files):
-        xml_path = os.path.join(ann_dir, xml_file)
-        objects = parse_annotation(xml_path)
-        
-        if not objects:
-            continue
-        
-        # Find corresponding image
+
+    # ── Collect every usable face first so the split can see all labels
+    faces = []
+    skipped_small = 0
+    for xml_file in xml_files:
         base_name = os.path.splitext(xml_file)[0]
-        img_path = None
-        for ext in ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']:
-            candidate = os.path.join(img_dir, base_name + ext)
-            if os.path.exists(candidate):
-                img_path = candidate
-                break
-        
-        if img_path is None:
-            skipped += 1
-            continue
-        
-        try:
-            img = Image.open(img_path).convert("RGB")
-            img_w, img_h = img.size
-        except Exception as e:
-            logger.warning(f"Cannot open image {img_path}: {e}")
-            skipped += 1
-            continue
-        
-        processed_images += 1
-        
-        for j, obj in enumerate(objects):
-            label = obj["name"]
-            if label not in CLASSES:
-                logger.debug(f"Skipping unknown class: {label}")
+        for j, obj in enumerate(parse_annotation(os.path.join(ann_dir, xml_file))):
+            if obj["name"] not in CLASSES:
+                logger.debug(f"Skipping unknown class: {obj['name']}")
                 continue
-            
-            # Add padding around the face crop
-            xmin = max(0, obj["xmin"] - padding)
-            ymin = max(0, obj["ymin"] - padding)
-            xmax = min(img_w, obj["xmax"] + padding)
-            ymax = min(img_h, obj["ymax"] + padding)
-            
-            # Skip tiny crops
-            if (xmax - xmin) < min_size or (ymax - ymin) < min_size:
+            if min(obj["xmax"] - obj["xmin"], obj["ymax"] - obj["ymin"]) < min_size:
+                skipped_small += 1
                 continue
-            
-            # Crop and save
-            face = img.crop((xmin, ymin, xmax, ymax))
-            face = face.resize((224, 224), Image.LANCZOS)
-            
-            out_name = f"{base_name}_face{j}.jpg"
-            out_path = os.path.join(output_dir, label, out_name)
-            face.save(out_path, "JPEG", quality=95)
-            counts[label] += 1
-        
-        # Progress log
-        if (i + 1) % 100 == 0:
-            logger.info(f"  Processed {i+1}/{len(xml_files)} annotations...")
-    
+            faces.append({"image": base_name, "index": j, "label": obj["name"],
+                          "box": (obj["xmin"], obj["ymin"], obj["xmax"], obj["ymax"])})
+
+    split_of_image = split_by_image(faces)
+
+    if os.path.isdir(output_dir):
+        for split in SPLITS:
+            shutil.rmtree(os.path.join(output_dir, split), ignore_errors=True)
+    for split in SPLITS:
+        for cls in CLASSES:
+            os.makedirs(os.path.join(output_dir, split, cls), exist_ok=True)
+
+    counts = {split: {cls: 0 for cls in CLASSES} for split in SPLITS}
+    manifest = []
+    image_cache_name, image = None, None
+
+    for face in faces:
+        if face["image"] != image_cache_name:
+            image_cache_name, image = face["image"], None
+            for ext in ('.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG'):
+                candidate = os.path.join(img_dir, face["image"] + ext)
+                if os.path.exists(candidate):
+                    image = cv2.imread(candidate)
+                    break
+            if image is None:
+                logger.warning(f"Missing or unreadable image for {face['image']}")
+        if image is None:
+            continue
+
+        split = split_of_image[face["image"]]
+        crop = crop_face(image, face["box"], margin)
+        out_name = f"{face['image']}_face{face['index']}.png"
+        cv2.imwrite(os.path.join(output_dir, split, face["label"], out_name), crop)
+        counts[split][face["label"]] += 1
+        manifest.append((split, face["label"], face["image"], *face["box"], out_name))
+
+    with open(os.path.join(output_dir, "manifest.csv"), "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["split", "label", "source_image", "xmin", "ymin", "xmax", "ymax", "file"])
+        writer.writerows(manifest)
+
     # ── Summary
-    total = sum(counts.values())
-    print("\n" + "=" * 55)
+    print("\n" + "=" * 62)
     print("📊 DATASET PREPARATION COMPLETE")
-    print("=" * 55)
-    print(f"  Images processed:      {processed_images}")
-    print(f"  Annotations skipped:   {skipped}")
-    print(f"  Total face crops:      {total}")
-    print("-" * 55)
-    for cls, count in counts.items():
-        pct = (count / total * 100) if total > 0 else 0
-        bar = "█" * int(pct / 2)
-        print(f"  {cls:<28} {count:>5} ({pct:>5.1f}%) {bar}")
-    print("=" * 55)
+    print("=" * 62)
+    print(f"  Source images:              {len(split_of_image)}")
+    print(f"  Faces skipped (< {min_size}px):     {skipped_small}")
+    print(f"  Face crops written:         {len(manifest)}")
+    print("-" * 62)
+    print(f"  {'class':<24}" + "".join(f"{s:>10}" for s in SPLITS))
+    for cls in CLASSES:
+        print(f"  {cls:<24}" + "".join(f"{counts[s][cls]:>10}" for s in SPLITS))
+    print("=" * 62)
     print(f"\n  Dataset saved to: {output_dir}")
     print(f"\n  ✅ Ready to train! Run:")
-    print(f"     python train.py --epochs 20 --fine-tune\n")
-    
+    print(f"     python train.py\n")
+
     return counts
 
 
@@ -229,8 +248,10 @@ if __name__ == "__main__":
                         help="Path to already-downloaded dataset (skip Kaggle download)")
     parser.add_argument("--output", default=DATASET_DIR,
                         help="Output directory for prepared dataset")
-    parser.add_argument("--padding", type=int, default=15,
-                        help="Padding pixels around face crops")
+    parser.add_argument("--margin", type=float, default=CROP_MARGIN,
+                        help="Context around each face as a fraction of face size")
+    parser.add_argument("--min-size", type=int, default=MIN_FACE_SIZE,
+                        help="Skip faces smaller than this (px, shorter side)")
     args = parser.parse_args()
     
     if args.source:
@@ -238,4 +259,4 @@ if __name__ == "__main__":
     else:
         source = download_kaggle_dataset()
     
-    prepare_dataset(source, args.output, padding=args.padding)
+    prepare_dataset(source, args.output, margin=args.margin, min_size=args.min_size)

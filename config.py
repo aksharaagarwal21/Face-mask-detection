@@ -9,6 +9,9 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "models")
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
+TRAIN_DIR = os.path.join(DATASET_DIR, "train")
+VAL_DIR = os.path.join(DATASET_DIR, "val")
+TEST_DIR = os.path.join(DATASET_DIR, "test")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 
@@ -38,10 +41,16 @@ CLASS_EMOJI = {
     "mask_weared_incorrect": "⚠️",
 }
 
+# ─── Dataset Preparation ─────────────────────────────────────────────────────
+CROP_MARGIN = 0.15                 # Context added on each side of a face box (fraction of face size)
+MIN_FACE_SIZE = 10                 # Skip annotated faces smaller than this (px, shorter side)
+SPLIT_SEED = 42
+
 # ─── Training Parameters ─────────────────────────────────────────────────────
-TRAIN_SPLIT = 0.8
-VAL_SPLIT = 0.1
-TEST_SPLIT = 0.1
+# Split is done per source photo, so faces from one photo never leak across splits
+TRAIN_SPLIT = 0.7
+VAL_SPLIT = 0.15
+TEST_SPLIT = 0.15
 BATCH_SIZE = 32
 INITIAL_LR = 1e-4
 EPOCHS = 20
