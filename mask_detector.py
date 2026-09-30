@@ -5,7 +5,9 @@ mask_detector.py — Mask classification inference engine
 Face ROIs should come from FaceDetector.detect_faces_rois(), which crops them
 the same way the training set was built. With TTA on (default), each face is
 scored together with its mirror image and the two probability vectors are
-averaged, the same as evaluate.py does.
+averaged, the same as evaluate.py does. The averaged probabilities are then
+temperature-scaled (calibrate.py), so a confidence of 0.9 means the model is
+right about 90% of the time and thresholds behave predictably.
 """
 
 import os
@@ -15,6 +17,7 @@ import numpy as np
 from config import (
     MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD, MASK_TTA
 )
+from calibrate import apply_temperature, load_temperature
 
 VIOLATION_CLASSES = ("without_mask", "mask_weared_incorrect")
 
@@ -32,14 +35,18 @@ class MaskDetector:
     """
 
     def __init__(self, model_path=MASK_MODEL_PATH, label_encoder_path=LABEL_ENCODER_PATH,
-                 tta=MASK_TTA, confidence_threshold=MASK_CONFIDENCE_THRESHOLD):
+                 tta=MASK_TTA, confidence_threshold=MASK_CONFIDENCE_THRESHOLD,
+                 temperature=None):
         self.model = self._load_model(model_path)
         self.classes = self._load_classes(label_encoder_path)
         self.input_size = tuple(self.model.input_shape[1:3])   # (height, width)
         self.tta = tta
         self.confidence_threshold = confidence_threshold
+        # None → the value calibrate.py stored in model_info.json (1.0 if never run)
+        self.temperature = load_temperature() if temperature is None else float(temperature)
         logger.info(f"MaskDetector initialized | classes: {self.classes} | "
-                    f"input {self.input_size} | TTA {'on' if tta else 'off'}")
+                    f"input {self.input_size} | TTA {'on' if tta else 'off'} | "
+                    f"temperature {self.temperature:.3f}")
 
     def _load_model(self, path):
         import keras
@@ -89,7 +96,7 @@ class MaskDetector:
         if self.tta:
             n = len(face_rois)
             probs = (probs[:n] + probs[n:]) / 2.0
-        return probs
+        return apply_temperature(probs, self.temperature)
 
     def label_of(self, probs):
         """(label, confidence) for one probability vector."""

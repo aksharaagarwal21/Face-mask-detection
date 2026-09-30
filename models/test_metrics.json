@@ -2,10 +2,12 @@
   "split": "dataset/test",
   "n_samples": 582,
   "tta": true,
+  "temperature": 0.4014,
   "accuracy": 0.9897,
   "macro_f1": 0.9473,
   "balanced_accuracy": 0.9473,
-  "macro_auc": 0.9991,
+  "macro_auc": 0.9989,
+  "ece": 0.0096,
   "per_class": {
     "mask_weared_incorrect": {
       "precision": 0.8667,

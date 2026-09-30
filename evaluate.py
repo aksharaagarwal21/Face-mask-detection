@@ -9,8 +9,9 @@ Outputs (models/plots/ and models/):
     - test_errors.jpg        (every misclassified test face, for error analysis)
     - test_metrics.json      (accuracy, macro-F1, balanced accuracy, per-class metrics)
 
-By default predictions average the image and its mirror (flip TTA), which is
-what MaskDetector does at runtime. Use --no-tta to score single passes.
+By default predictions average the image and its mirror (flip TTA) and are
+temperature-scaled with the value calibrate.py stored, which is what
+MaskDetector does at runtime. Use --no-tta / --no-calibration to turn either off.
 """
 
 import os
@@ -31,6 +32,7 @@ from sklearn.metrics import (
 from sklearn.preprocessing import label_binarize
 
 from model import load_trained_model
+from calibrate import apply_temperature, load_temperature, expected_calibration_error
 from data_pipeline import make_eval_dataset
 from config import (
     TEST_DIR, MODEL_DIR, CLASSES, MASK_MODEL_PATH, BATCH_SIZE, METRICS_PATH
@@ -52,7 +54,7 @@ def predict_probs(model, dataset, tta=True):
 
 
 def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=None,
-                   tta=True, metrics_path=METRICS_PATH):
+                   tta=True, metrics_path=METRICS_PATH, calibrated=True):
     """Full evaluation pipeline for the trained model. Returns the metrics dict."""
     output_dir = output_dir or os.path.join(MODEL_DIR, "plots")
     os.makedirs(output_dir, exist_ok=True)
@@ -68,7 +70,8 @@ def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=
         raise SystemExit(f"No test images found under {dataset_dir}. Run download_dataset.py first.")
 
     logger.info(f"Predicting {len(y_true)} faces (flip TTA: {'on' if tta else 'off'})...")
-    y_prob = predict_probs(model, test_ds, tta=tta)
+    temperature = load_temperature() if calibrated else 1.0
+    y_prob = apply_temperature(predict_probs(model, test_ds, tta=tta), temperature)
     y_pred = np.argmax(y_prob, axis=1)
     n_classes = len(CLASSES)
 
@@ -92,10 +95,12 @@ def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=
         "split": os.path.relpath(dataset_dir, os.path.dirname(MODEL_DIR)).replace("\\", "/"),
         "n_samples": int(len(y_true)),
         "tta": tta,
+        "temperature": temperature,
         "accuracy": round(float(np.mean(y_pred == y_true)), 4),
         "macro_f1": round(float(f1_score(y_true, y_pred, average="macro")), 4),
         "balanced_accuracy": round(float(balanced_accuracy_score(y_true, y_pred)), 4),
         "macro_auc": round(float(auc_scores.get("macro", float("nan"))), 4),
+        "ece": round(expected_calibration_error(y_prob, y_true), 4),
         "per_class": {
             cls: {"precision": round(float(precision[i]), 4), "recall": round(float(recall[i]), 4),
                   "f1": round(float(f1[i]), 4), "support": int(support[i])}
@@ -111,6 +116,7 @@ def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=
     print(f"\nAccuracy:           {metrics['accuracy']*100:.2f}%")
     print(f"Macro F1:           {metrics['macro_f1']:.4f}")
     print(f"Balanced accuracy:  {metrics['balanced_accuracy']*100:.2f}%")
+    print(f"Calibration (ECE):  {metrics['ece']:.4f}  (temperature {temperature:.3f})")
     print(f"Plots saved to:     {output_dir}/")
     return metrics
 
@@ -217,8 +223,11 @@ if __name__ == "__main__":
                         help="Directory to save plots")
     parser.add_argument("--no-tta", action="store_true",
                         help="Disable flip test-time augmentation")
+    parser.add_argument("--no-calibration", action="store_true",
+                        help="Score raw softmax outputs (ignore the stored temperature)")
     args = parser.parse_args()
 
-    results = evaluate_model(args.model, args.dataset, args.output_dir, tta=not args.no_tta)
+    results = evaluate_model(args.model, args.dataset, args.output_dir, tta=not args.no_tta,
+                             calibrated=not args.no_calibration)
     print(f"\n✅ Evaluation complete | Accuracy: {results['accuracy']*100:.2f}% "
           f"| Macro F1: {results['macro_f1']:.4f}")

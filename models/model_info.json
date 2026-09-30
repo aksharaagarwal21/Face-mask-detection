@@ -18,5 +18,28 @@
   "epochs_run": 24,
   "val_accuracy": 0.9964,
   "val_macro_f1": 0.9813,
-  "seed": 42
+  "seed": 42,
+  "temperature": 0.4014,
+  "calibration": {
+    "val": {
+      "n": 563,
+      "ece_before": 0.0713,
+      "ece_after": 0.0037,
+      "nll_before": 0.0807,
+      "nll_after": 0.0123,
+      "mean_confidence_before": 0.9268,
+      "mean_confidence_after": 0.9963,
+      "accuracy": 0.9964
+    },
+    "test": {
+      "n": 582,
+      "ece_before": 0.0665,
+      "ece_after": 0.0096,
+      "nll_before": 0.0961,
+      "nll_after": 0.045,
+      "mean_confidence_before": 0.9246,
+      "mean_confidence_after": 0.9958,
+      "accuracy": 0.9897
+    }
+  }
 }
