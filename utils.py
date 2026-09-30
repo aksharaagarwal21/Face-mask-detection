@@ -27,13 +27,22 @@ class FPSCounter:
 
 
 # ─── Drawing Utilities ────────────────────────────────────────────────────────
+def cv_text(text):
+    """
+    cv2.putText only has glyphs for ASCII; anything else (emoji, "—", "⚠")
+    is drawn as "?". Swap the common ones and drop the rest.
+    """
+    text = text.replace("—", "-").replace("–", "-").replace("·", "|")
+    return " ".join(text.encode("ascii", "ignore").decode("ascii").split())
+
+
 def draw_detection_box(frame, startX, startY, endX, endY, label, confidence, color):
     """Draw a styled bounding box with label and confidence."""
     # Main box
     cv2.rectangle(frame, (startX, startY), (endX, endY), color, 2)
 
     # Build label text
-    text = f"{label}: {confidence*100:.1f}%"
+    text = cv_text(f"{label}: {confidence*100:.1f}%")
 
     # Label background
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -41,16 +50,18 @@ def draw_detection_box(frame, startX, startY, endX, endY, label, confidence, col
     thickness = 1
     (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
     label_y = max(startY - 10, text_h + 10)
+    # Keep the label inside the frame for faces near the right edge
+    label_x = max(0, min(startX, frame.shape[1] - text_w - 4))
 
     # Fill label background
     cv2.rectangle(frame,
-                  (startX, label_y - text_h - baseline - 4),
-                  (startX + text_w + 4, label_y + baseline - 4),
+                  (label_x, label_y - text_h - baseline - 4),
+                  (label_x + text_w + 4, label_y + baseline - 4),
                   color, -1)
 
     # Draw white text
     cv2.putText(frame, text,
-                (startX + 2, label_y - 4),
+                (label_x + 2, label_y - 4),
                 font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
     return frame
@@ -86,8 +97,9 @@ def draw_stats_overlay(frame, stats: dict, fps: float):
     return frame
 
 
-def draw_alert_banner(frame, message="⚠ NO MASK DETECTED!", color=(0, 0, 220)):
+def draw_alert_banner(frame, message="NO MASK DETECTED!", color=(0, 0, 220)):
     """Draw flashing alert banner at the bottom of the frame."""
+    message = cv_text(message)
     h, w = frame.shape[:2]
     overlay = frame.copy()
     cv2.rectangle(overlay, (0, h - 50), (w, h), color, -1)
