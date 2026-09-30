@@ -1,0 +1,46 @@
+{
+  "split": "dataset/test",
+  "n_samples": 582,
+  "tta": true,
+  "accuracy": 0.9897,
+  "macro_f1": 0.9473,
+  "balanced_accuracy": 0.9473,
+  "macro_auc": 0.9991,
+  "per_class": {
+    "mask_weared_incorrect": {
+      "precision": 0.8667,
+      "recall": 0.8667,
+      "f1": 0.8667,
+      "support": 15
+    },
+    "with_mask": {
+      "precision": 0.9957,
+      "recall": 0.9957,
+      "f1": 0.9957,
+      "support": 469
+    },
+    "without_mask": {
+      "precision": 0.9796,
+      "recall": 0.9796,
+      "f1": 0.9796,
+      "support": 98
+    }
+  },
+  "confusion_matrix": [
+    [
+      13,
+      1,
+      1
+    ],
+    [
+      1,
+      467,
+      1
+    ],
+    [
+      1,
+      1,
+      96
+    ]
+  ]
+}
