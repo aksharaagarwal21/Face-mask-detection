@@ -15,7 +15,8 @@ import pickle
 import logging
 import numpy as np
 from config import (
-    MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD, MASK_TTA
+    MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD, MASK_TTA,
+    MASK_RUNTIME, MASK_TFLITE_PATH
 )
 from calibrate import apply_temperature, load_temperature
 
@@ -36,17 +37,30 @@ class MaskDetector:
 
     def __init__(self, model_path=MASK_MODEL_PATH, label_encoder_path=LABEL_ENCODER_PATH,
                  tta=MASK_TTA, confidence_threshold=MASK_CONFIDENCE_THRESHOLD,
-                 temperature=None):
-        self.model = self._load_model(model_path)
+                 temperature=None, runtime=MASK_RUNTIME, tflite_path=MASK_TFLITE_PATH):
+        self.runtime = self._resolve_runtime(runtime, tflite_path)
+        if self.runtime == "tflite":
+            self.model = self._load_tflite(tflite_path)
+        else:
+            self.model = self._load_model(model_path)
         self.classes = self._load_classes(label_encoder_path)
         self.input_size = tuple(self.model.input_shape[1:3])   # (height, width)
         self.tta = tta
         self.confidence_threshold = confidence_threshold
         # None → the value calibrate.py stored in model_info.json (1.0 if never run)
         self.temperature = load_temperature() if temperature is None else float(temperature)
-        logger.info(f"MaskDetector initialized | classes: {self.classes} | "
+        logger.info(f"MaskDetector initialized | {self.runtime} | classes: {self.classes} | "
                     f"input {self.input_size} | TTA {'on' if tta else 'off'} | "
                     f"temperature {self.temperature:.3f}")
+
+    @staticmethod
+    def _resolve_runtime(runtime, tflite_path):
+        """'auto' picks the exported fp16 TFLite model when present (same predictions, faster)."""
+        if runtime not in ("auto", "keras", "tflite"):
+            raise ValueError(f"Unknown runtime '{runtime}' (use auto, keras or tflite)")
+        if runtime == "auto":
+            return "tflite" if os.path.exists(tflite_path) else "keras"
+        return runtime
 
     def _load_model(self, path):
         import keras
@@ -59,12 +73,23 @@ class MaskDetector:
         logger.info(f"✅ Model loaded from {path}")
         return model
 
+    def _load_tflite(self, path):
+        from export import TFLiteRunner
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"TFLite model not found at: {path}\n"
+                "Export it first: python export.py --variants fp16"
+            )
+        runner = TFLiteRunner(model_path=path)
+        logger.info(f"✅ TFLite model loaded from {path}")
+        return runner
+
     def _load_classes(self, path):
         """Load label encoder or fall back to config CLASSES."""
         if os.path.exists(path):
             with open(path, 'rb') as f:
                 le = pickle.load(f)
-            return list(le.classes_)
+            return [str(c) for c in le.classes_]
         logger.warning("Label encoder not found — using default class order from config")
         return CLASSES
 

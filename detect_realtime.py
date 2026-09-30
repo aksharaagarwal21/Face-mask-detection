@@ -26,7 +26,7 @@ from utils import (
 from config import (
     CAMERA_INDEX, CLASS_COLORS, FRAME_WIDTH, FRAME_HEIGHT,
     MASK_CONFIDENCE_THRESHOLD, SCREENSHOTS_DIR, FACE_CONFIDENCE_THRESHOLD,
-    FACE_DETECTOR_BACKEND, TRACK_SMOOTHING
+    FACE_DETECTOR_BACKEND, TRACK_SMOOTHING, MASK_RUNTIME
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -41,7 +41,8 @@ def run(args):
 
     # ── Initialize components
     face_detector = FaceDetector(confidence_threshold=args.face_conf, backend=args.backend)
-    mask_detector = MaskDetector(confidence_threshold=args.mask_conf, tta=not args.no_tta)
+    mask_detector = MaskDetector(confidence_threshold=args.mask_conf, tta=not args.no_tta,
+                                 runtime=args.runtime)
     tracker = CentroidTracker(smoothing=1.0 if args.no_smoothing else TRACK_SMOOTHING)
     alert_system = AlertSystem(enabled=not args.no_alert)
     analytics = SessionAnalytics(session_id)
@@ -229,6 +230,8 @@ if __name__ == "__main__":
                         help="Face detection confidence threshold")
     parser.add_argument("--backend", default=FACE_DETECTOR_BACKEND, choices=["yunet", "ssd"],
                         help="Face detector backend")
+    parser.add_argument("--runtime", default=MASK_RUNTIME, choices=["auto", "keras", "tflite"],
+                        help="Classifier runtime (auto = TFLite fp16 if exported)")
     parser.add_argument("--no-tta", action="store_true",
                         help="Disable flip test-time augmentation (faster, slightly less accurate)")
     parser.add_argument("--no-smoothing", action="store_true",
