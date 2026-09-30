@@ -1,9 +1,20 @@
 # pyre-unsafe
 """
-evaluate.py — Model evaluation: classification report, confusion matrix, ROC curves
+evaluate.py — Model evaluation on the held-out test split
+
+Outputs (models/plots/ and models/):
+    - classification report (printed)
+    - confusion_matrix.png   (row-normalised, raw counts annotated)
+    - roc_curves.png         (one-vs-rest + macro AUC)
+    - test_errors.jpg        (every misclassified test face, for error analysis)
+    - test_metrics.json      (accuracy, macro-F1, balanced accuracy, per-class metrics)
+
+By default predictions average the image and its mirror (flip TTA), which is
+what MaskDetector does at runtime. Use --no-tta to score single passes.
 """
 
 import os
+import json
 import argparse
 import logging
 import numpy as np
@@ -11,17 +22,18 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
+import tensorflow as tf
 
 from sklearn.metrics import (
-    classification_report, confusion_matrix, roc_auc_score,
-    roc_curve, auc
+    classification_report, confusion_matrix, roc_auc_score, roc_curve, auc,
+    f1_score, balanced_accuracy_score, precision_recall_fscore_support
 )
 from sklearn.preprocessing import label_binarize
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from keras.models import load_model
 
+from model import load_trained_model
+from data_pipeline import make_eval_dataset
 from config import (
-    TEST_DIR, MODEL_DIR, CLASSES, MASK_MODEL_PATH, INPUT_SIZE, BATCH_SIZE
+    TEST_DIR, MODEL_DIR, CLASSES, MASK_MODEL_PATH, BATCH_SIZE, METRICS_PATH
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -29,95 +41,96 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("Evaluate")
 
 
-def load_test_generator(dataset_dir=TEST_DIR, batch_size=BATCH_SIZE):
-    """Load the held-out test split (no augmentation)."""
-    gen = ImageDataGenerator()   # raw pixels — the model does its own scaling
-    test_gen = gen.flow_from_directory(
-        dataset_dir,
-        target_size=INPUT_SIZE,
-        batch_size=batch_size,
-        class_mode="categorical",
-        shuffle=False
-    )
-    return test_gen
+def predict_probs(model, dataset, tta=True):
+    """Class probabilities for a (x, y) dataset; averages with the mirrored image if tta."""
+    images = dataset.map(lambda x, y: x)
+    probs = model.predict(images, verbose=0)
+    if tta:
+        flipped = images.map(tf.image.flip_left_right)
+        probs = (probs + model.predict(flipped, verbose=0)) / 2.0
+    return probs
 
 
-def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=None):
-    """
-    Full evaluation pipeline for the trained model.
-
-    Outputs:
-        - Classification report (printed)
-        - Confusion matrix (saved as PNG)
-        - ROC curves per class (saved as PNG)
-        - Summary metrics JSON
-    """
+def evaluate_model(model_path=MASK_MODEL_PATH, dataset_dir=TEST_DIR, output_dir=None,
+                   tta=True, metrics_path=METRICS_PATH):
+    """Full evaluation pipeline for the trained model. Returns the metrics dict."""
     output_dir = output_dir or os.path.join(MODEL_DIR, "plots")
     os.makedirs(output_dir, exist_ok=True)
 
-    # ── Load model
     logger.info(f"Loading model: {model_path}")
-    model = load_model(model_path, compile=False)
+    model = load_trained_model(model_path)
+    input_size = tuple(model.input_shape[1:3])
 
-    # ── Load test data
-    logger.info("Loading dataset...")
-    test_gen = load_test_generator(dataset_dir)
-    class_indices = test_gen.class_indices
-    class_names = [k for k, v in sorted(class_indices.items(), key=lambda x: x[1])]
-    n_classes = len(class_names)
+    logger.info(f"Loading test split: {dataset_dir}")
+    test_ds, y_true, paths = make_eval_dataset(dataset_dir, BATCH_SIZE, input_size,
+                                               one_hot=False)
+    if len(y_true) == 0:
+        raise SystemExit(f"No test images found under {dataset_dir}. Run download_dataset.py first.")
 
-    # ── Predictions
-    logger.info("Running predictions...")
-    test_gen.reset()
-    y_prob = model.predict(test_gen, verbose=1)
+    logger.info(f"Predicting {len(y_true)} faces (flip TTA: {'on' if tta else 'off'})...")
+    y_prob = predict_probs(model, test_ds, tta=tta)
     y_pred = np.argmax(y_prob, axis=1)
-    y_true = test_gen.classes[:len(y_pred)]
+    n_classes = len(CLASSES)
 
-    # ── Classification Report
+    # ── Classification report
     print("\n" + "="*65)
-    print("📊 CLASSIFICATION REPORT")
+    print("📊 CLASSIFICATION REPORT (held-out test split)")
     print("="*65)
-    report = classification_report(y_true, y_pred, target_names=class_names, digits=4)
-    print(report)
+    print(classification_report(y_true, y_pred, labels=list(range(n_classes)),
+                                target_names=CLASSES, digits=4, zero_division=0))
 
-    # ── Confusion Matrix
-    cm = confusion_matrix(y_true, y_pred)
-    _plot_confusion_matrix(cm, class_names, output_dir)
+    cm = confusion_matrix(y_true, y_pred, labels=list(range(n_classes)))
+    _plot_confusion_matrix(cm, CLASSES, output_dir)
 
-    # ── ROC Curves
     y_true_bin = label_binarize(y_true, classes=list(range(n_classes)))
-    _plot_roc_curves(y_true_bin, y_prob, class_names, n_classes, output_dir)
+    auc_scores = _plot_roc_curves(y_true_bin, y_prob, CLASSES, n_classes, output_dir)
+    _save_error_gallery(paths, y_true, y_pred, y_prob, output_dir)
 
-    # ── Per-class metrics
-    accuracy = np.mean(y_pred == y_true)
-    print(f"\nOverall Accuracy: {accuracy*100:.2f}%")
-    print(f"Plots saved to:   {output_dir}/")
-
-    return {
-        "accuracy": float(accuracy),
-        "n_samples": len(y_true),
-        "class_names": class_names,
+    precision, recall, f1, support = precision_recall_fscore_support(
+        y_true, y_pred, labels=list(range(n_classes)), zero_division=0)
+    metrics = {
+        "split": os.path.relpath(dataset_dir, os.path.dirname(MODEL_DIR)).replace("\\", "/"),
+        "n_samples": int(len(y_true)),
+        "tta": tta,
+        "accuracy": round(float(np.mean(y_pred == y_true)), 4),
+        "macro_f1": round(float(f1_score(y_true, y_pred, average="macro")), 4),
+        "balanced_accuracy": round(float(balanced_accuracy_score(y_true, y_pred)), 4),
+        "macro_auc": round(float(auc_scores.get("macro", float("nan"))), 4),
+        "per_class": {
+            cls: {"precision": round(float(precision[i]), 4), "recall": round(float(recall[i]), 4),
+                  "f1": round(float(f1[i]), 4), "support": int(support[i])}
+            for i, cls in enumerate(CLASSES)
+        },
+        "confusion_matrix": cm.tolist(),
     }
+    if metrics_path:
+        with open(metrics_path, "w") as f:
+            json.dump(metrics, f, indent=2)
+        logger.info(f"Metrics saved: {metrics_path}")
+
+    print(f"\nAccuracy:           {metrics['accuracy']*100:.2f}%")
+    print(f"Macro F1:           {metrics['macro_f1']:.4f}")
+    print(f"Balanced accuracy:  {metrics['balanced_accuracy']*100:.2f}%")
+    print(f"Plots saved to:     {output_dir}/")
+    return metrics
 
 
 def _plot_confusion_matrix(cm, class_names, output_dir):
     """Save confusion matrix heatmap."""
     plt.figure(figsize=(8, 6))
-
-    # Normalize
-    cm_norm = cm.astype("float") / cm.sum(axis=1, keepdims=True)
-
+    cm_norm = cm.astype("float") / np.maximum(cm.sum(axis=1, keepdims=True), 1)
     sns.heatmap(
         cm_norm,
         annot=cm,               # Show raw counts
         fmt="d",
         cmap="Blues",
+        vmin=0, vmax=1,
         xticklabels=class_names,
         yticklabels=class_names,
         linewidths=0.5,
-        cbar_kws={"label": "Normalized Fraction"}
+        cbar_kws={"label": "Fraction of true class"}
     )
-    plt.title("Confusion Matrix", fontsize=14, fontweight='bold', pad=15)
+    plt.title("Confusion Matrix (test split)", fontsize=14, fontweight='bold', pad=15)
     plt.ylabel("True Label", fontsize=11)
     plt.xlabel("Predicted Label", fontsize=11)
     plt.xticks(rotation=30, ha='right', fontsize=9)
@@ -132,25 +145,22 @@ def _plot_confusion_matrix(cm, class_names, output_dir):
 
 def _plot_roc_curves(y_true_bin, y_prob, class_names, n_classes, output_dir):
     """Plot one-vs-rest ROC curves for each class + macro-average."""
-    colors = ["#4CAF50", "#F44336", "#FF9800"]
+    colors = ["#FF9800", "#4CAF50", "#F44336"]
     plt.figure(figsize=(9, 6))
 
     auc_scores = {}
     for i, (cls, color) in enumerate(zip(class_names, colors)):
-        if y_true_bin.shape[1] <= i:
+        if y_true_bin[:, i].sum() == 0:
             continue
         fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_prob[:, i])
         roc_auc = auc(fpr, tpr)
         auc_scores[cls] = roc_auc
-        plt.plot(fpr, tpr, color=color, lw=2,
-                 label=f"{cls} (AUC = {roc_auc:.3f})")
+        plt.plot(fpr, tpr, color=color, lw=2, label=f"{cls} (AUC = {roc_auc:.3f})")
 
-    # Macro-average
     try:
-        macro_auc = roc_auc_score(y_true_bin, y_prob,
-                                   multi_class="ovr", average="macro")
-        plt.plot([], [], ' ', label=f"Macro AUC = {macro_auc:.3f}")
-    except Exception:
+        auc_scores["macro"] = roc_auc_score(y_true_bin, y_prob, multi_class="ovr", average="macro")
+        plt.plot([], [], ' ', label=f"Macro AUC = {auc_scores['macro']:.3f}")
+    except ValueError:
         pass
 
     plt.plot([0, 1], [0, 1], 'k--', lw=1, label="Random")
@@ -158,7 +168,7 @@ def _plot_roc_curves(y_true_bin, y_prob, class_names, n_classes, output_dir):
     plt.ylim([0.0, 1.05])
     plt.xlabel("False Positive Rate", fontsize=11)
     plt.ylabel("True Positive Rate", fontsize=11)
-    plt.title("ROC Curves (One-vs-Rest)", fontsize=13, fontweight='bold')
+    plt.title("ROC Curves (One-vs-Rest, test split)", fontsize=13, fontweight='bold')
     plt.legend(loc="lower right", fontsize=9)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -170,6 +180,33 @@ def _plot_roc_curves(y_true_bin, y_prob, class_names, n_classes, output_dir):
     return auc_scores
 
 
+def _save_error_gallery(paths, y_true, y_pred, y_prob, output_dir, tile=96, cols=8):
+    """Grid of misclassified test faces labelled 'true -> predicted (conf)'."""
+    import cv2
+    wrong = np.where(y_true != y_pred)[0]
+    if len(wrong) == 0:
+        return None
+    short = {"mask_weared_incorrect": "incorrect", "with_mask": "mask", "without_mask": "no mask"}
+    rows = int(np.ceil(len(wrong) / cols))
+    grid = np.full((rows * (tile + 28), cols * tile, 3), 30, dtype="uint8")
+    for k, i in enumerate(wrong):
+        img = cv2.imread(str(paths[i]))
+        if img is None:
+            continue
+        r, c = divmod(k, cols)
+        y0, x0 = r * (tile + 28), c * tile
+        grid[y0:y0 + tile, x0:x0 + tile] = cv2.resize(img, (tile, tile))
+        cv2.putText(grid, short[CLASSES[y_true[i]]], (x0 + 3, y0 + tile + 11),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (180, 255, 180), 1, cv2.LINE_AA)
+        cv2.putText(grid, f"> {short[CLASSES[y_pred[i]]]} {y_prob[i].max():.2f}",
+                    (x0 + 3, y0 + tile + 23), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+                    (140, 170, 255), 1, cv2.LINE_AA)
+    path = os.path.join(output_dir, "test_errors.jpg")
+    cv2.imwrite(path, grid)
+    logger.info(f"Error gallery ({len(wrong)} faces) saved: {path}")
+    return path
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate trained mask detector model")
     parser.add_argument("--model", default=MASK_MODEL_PATH,
@@ -178,7 +215,10 @@ if __name__ == "__main__":
                         help="Held-out test directory (one sub-folder per class)")
     parser.add_argument("--output-dir", default=os.path.join(MODEL_DIR, "plots"),
                         help="Directory to save plots")
+    parser.add_argument("--no-tta", action="store_true",
+                        help="Disable flip test-time augmentation")
     args = parser.parse_args()
 
-    results = evaluate_model(args.model, args.dataset, args.output_dir)
-    print(f"\n✅ Evaluation complete | Accuracy: {results['accuracy']*100:.2f}%")
+    results = evaluate_model(args.model, args.dataset, args.output_dir, tta=not args.no_tta)
+    print(f"\n✅ Evaluation complete | Accuracy: {results['accuracy']*100:.2f}% "
+          f"| Macro F1: {results['macro_f1']:.4f}")
