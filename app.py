@@ -16,7 +16,8 @@ from flask import (
 )
 from config import (
     FLASK_HOST, FLASK_PORT, FLASK_DEBUG, STREAM_QUALITY,
-    CAMERA_INDEX, CLASS_COLORS, MASK_CONFIDENCE_THRESHOLD
+    CAMERA_INDEX, CLASS_COLORS, MASK_CONFIDENCE_THRESHOLD,
+    MODEL_INFO_PATH, METRICS_PATH, MODEL_DIR, MAX_UPLOAD_MB
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -24,6 +25,12 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("FlaskApp")
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024   # larger uploads get HTTP 413
+
+# Photo analysis (/api/predict) shares one pipeline; the lock serialises
+# requests because a TFLite interpreter must not run on two threads at once.
+_pipeline = None
+_pipeline_lock = threading.Lock()
 
 # ─── Global State ─────────────────────────────────────────────────────────────
 _frame_lock = threading.Lock()
@@ -292,6 +299,79 @@ def api_logs_download():
             download_name="violations.csv"
         )
     return jsonify({"error": "Log file not found"}), 404
+
+
+def _get_pipeline():
+    """Create the photo-analysis pipeline on first use (call with _pipeline_lock held)."""
+    global _pipeline
+    if _pipeline is None:
+        from pipeline import MaskPipeline
+        _pipeline = MaskPipeline()
+    return _pipeline
+
+
+@app.route("/api/predict", methods=["POST"])
+def api_predict():
+    """
+    Analyse one photo.
+
+    Send the image as multipart form field "image" or as the raw request
+    body. Returns the MaskPipeline.analyze() JSON, or the annotated image as
+    JPEG with ?annotate=1.
+
+        curl -F image=@photo.jpg http://127.0.0.1:5000/api/predict
+    """
+    from pipeline import decode_image
+    upload = request.files.get("image")
+    data = upload.read() if upload else request.get_data()
+    frame = decode_image(data)
+    if frame is None:
+        return jsonify({"error": "Send an image (JPEG/PNG) as form field 'image' or as the body"}), 400
+
+    with _pipeline_lock:
+        pipeline = _get_pipeline()          # first request loads the models
+        t0 = time.perf_counter()
+        result = pipeline.analyze(frame)
+        result["inference_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+
+    if request.args.get("annotate", "").lower() in ("1", "true", "yes"):
+        ok, buf = cv2.imencode(".jpg", pipeline.annotate(frame, result),
+                               [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        return Response(buf.tobytes(), mimetype="image/jpeg")
+    return jsonify(result)
+
+
+@app.route("/api/model")
+def api_model():
+    """Model card numbers: backbone, calibration and held-out test results."""
+    import json
+
+    def load(path):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    info = load(MODEL_INFO_PATH) or {}
+    test = load(METRICS_PATH) or {}
+    pipeline = load(os.path.join(MODEL_DIR, "pipeline_metrics.json")) or []
+    return jsonify({
+        "backbone": info.get("backbone"),
+        "input_size": info.get("input_size"),
+        "classes": info.get("classes"),
+        "temperature": info.get("temperature"),
+        "test": {k: test.get(k) for k in
+                 ("n_samples", "accuracy", "macro_f1", "balanced_accuracy", "macro_auc", "ece")},
+        "end_to_end": [{k: p.get(k) for k in
+                        ("backend", "detection_recall", "accuracy_on_detected", "end_to_end_accuracy")}
+                       for p in pipeline],
+    })
+
+
+@app.errorhandler(413)
+def too_large(_):
+    return jsonify({"error": f"Upload larger than {MAX_UPLOAD_MB} MB"}), 413
 
 
 @app.route("/api/heatmap", methods=["POST"])

@@ -110,6 +110,7 @@ FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 5000
 FLASK_DEBUG = False
 STREAM_QUALITY = 80                # JPEG quality for MJPEG stream (1-100)
+MAX_UPLOAD_MB = 10                 # /api/predict rejects larger uploads (HTTP 413)
 
 # ─── Augmentation ────────────────────────────────────────────────────────────
 AUGMENTATION = {
