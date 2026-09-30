@@ -26,7 +26,8 @@ from collections import defaultdict
 import cv2
 import numpy as np
 
-from config import DATASET_DIR, CLASSES, MODEL_DIR, FACE_CONFIDENCE_THRESHOLD
+from config import (DATASET_DIR, CLASSES, MODEL_DIR, FACE_CONFIDENCE_THRESHOLD,
+                    DETECT_UPSCALE_TO)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("EvaluatePipeline")
@@ -77,9 +78,10 @@ def find_image(source_dir, name):
     return None
 
 
-def run(backend, faces_by_image, source_dir, mask_detector, iou_thr, conf):
+def run(backend, faces_by_image, source_dir, mask_detector, iou_thr, conf,
+        upscale_to=DETECT_UPSCALE_TO):
     from face_detector import FaceDetector
-    detector = FaceDetector(confidence_threshold=conf, backend=backend)
+    detector = FaceDetector(confidence_threshold=conf, backend=backend, upscale_to=upscale_to)
 
     total = defaultdict(int)
     found = defaultdict(int)
@@ -107,6 +109,7 @@ def run(backend, faces_by_image, source_dir, mask_detector, iou_thr, conf):
                     correct[label] += 1
 
     summary = {"backend": backend, "iou": iou_thr, "confidence": conf,
+               "upscale_to": upscale_to if backend == "yunet" else 0,
                "detections": n_det, "unmatched_detections": n_fp, "per_class": {}}
     for cls in CLASSES:
         t = total[cls]
@@ -125,7 +128,8 @@ def run(backend, faces_by_image, source_dir, mask_detector, iou_thr, conf):
 
 
 def print_summary(s):
-    print(f"\n── {s['backend'].upper()}  (IoU ≥ {s['iou']}, conf ≥ {s['confidence']}) " + "─" * 30)
+    print(f"\n── {s['backend'].upper()}  (IoU ≥ {s['iou']}, conf ≥ {s['confidence']}, "
+          f"upscale to {s['upscale_to'] or 'off'}) " + "─" * 20)
     print(f"  {'class':<24}{'faces':>7}{'found':>9}{'found+correct':>15}")
     for cls, r in s["per_class"].items():
         rec = f"{r['detection_recall']*100:.1f}%" if r["detection_recall"] is not None else "-"
@@ -147,6 +151,8 @@ if __name__ == "__main__":
     parser.add_argument("--backends", nargs="+", default=["yunet", "ssd"])
     parser.add_argument("--iou", type=float, default=0.3)
     parser.add_argument("--conf", type=float, default=FACE_CONFIDENCE_THRESHOLD)
+    parser.add_argument("--upscale-to", type=int, default=DETECT_UPSCALE_TO,
+                        help="Enlarge smaller photos to this longer side before detection (0 = off)")
     parser.add_argument("--no-classify", action="store_true", help="Only measure detection recall")
     parser.add_argument("--out", default=os.path.join(MODEL_DIR, "pipeline_metrics.json"))
     args = parser.parse_args()
@@ -160,7 +166,8 @@ if __name__ == "__main__":
         from mask_detector import MaskDetector
         mask_detector = MaskDetector()
 
-    results = [run(b, faces_by_image, args.source, mask_detector, args.iou, args.conf)
+    results = [run(b, faces_by_image, args.source, mask_detector, args.iou, args.conf,
+                   args.upscale_to)
                for b in args.backends]
     for r in results:
         print_summary(r)

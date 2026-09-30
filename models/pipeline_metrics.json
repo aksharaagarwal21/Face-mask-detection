@@ -1,0 +1,58 @@
+[
+  {
+    "backend": "yunet",
+    "iou": 0.3,
+    "confidence": 0.5,
+    "upscale_to": 800,
+    "detections": 676,
+    "unmatched_detections": 153,
+    "per_class": {
+      "mask_weared_incorrect": {
+        "faces": 15,
+        "detection_recall": 0.8,
+        "end_to_end_accuracy": 0.6667
+      },
+      "with_mask": {
+        "faces": 469,
+        "detection_recall": 0.8891,
+        "end_to_end_accuracy": 0.8849
+      },
+      "without_mask": {
+        "faces": 98,
+        "detection_recall": 0.9592,
+        "end_to_end_accuracy": 0.9286
+      }
+    },
+    "detection_recall": 0.8986,
+    "accuracy_on_detected": 0.9866,
+    "end_to_end_accuracy": 0.8866
+  },
+  {
+    "backend": "ssd",
+    "iou": 0.3,
+    "confidence": 0.5,
+    "upscale_to": 0,
+    "detections": 206,
+    "unmatched_detections": 5,
+    "per_class": {
+      "mask_weared_incorrect": {
+        "faces": 15,
+        "detection_recall": 0.4,
+        "end_to_end_accuracy": 0.4
+      },
+      "with_mask": {
+        "faces": 469,
+        "detection_recall": 0.3262,
+        "end_to_end_accuracy": 0.3262
+      },
+      "without_mask": {
+        "faces": 98,
+        "detection_recall": 0.4286,
+        "end_to_end_accuracy": 0.4286
+      }
+    },
+    "detection_recall": 0.3454,
+    "accuracy_on_detected": 1.0,
+    "end_to_end_accuracy": 0.3454
+  }
+]

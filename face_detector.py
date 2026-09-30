@@ -18,7 +18,8 @@ import urllib.request
 import logging
 from config import (
     FACE_PROTOTXT_PATH, FACE_WEIGHTS_PATH, YUNET_MODEL_PATH, FACE_DETECTOR_BACKEND,
-    FACE_CONFIDENCE_THRESHOLD, FACE_NMS_THRESHOLD, MIN_DETECT_FACE_SIZE, MODEL_DIR
+    FACE_CONFIDENCE_THRESHOLD, FACE_NMS_THRESHOLD, MIN_DETECT_FACE_SIZE, MODEL_DIR,
+    DETECT_UPSCALE_TO, DETECT_MAX_UPSCALE
 )
 from utils import crop_face
 
@@ -69,10 +70,13 @@ class FaceDetector:
 
     def __init__(self, confidence_threshold=FACE_CONFIDENCE_THRESHOLD,
                  backend=FACE_DETECTOR_BACKEND, nms_threshold=FACE_NMS_THRESHOLD,
-                 min_face_size=MIN_DETECT_FACE_SIZE):
+                 min_face_size=MIN_DETECT_FACE_SIZE, upscale_to=DETECT_UPSCALE_TO,
+                 max_upscale=DETECT_MAX_UPSCALE):
         self.confidence_threshold = confidence_threshold
         self.nms_threshold = nms_threshold
         self.min_face_size = min_face_size
+        self.upscale_to = upscale_to
+        self.max_upscale = max_upscale
         self.backend = backend
         self._input_size = None
 
@@ -127,10 +131,14 @@ class FaceDetector:
             List of tuples: (startX, startY, endX, endY, confidence)
         """
         h, w = frame.shape[:2]
-        raw = self._detect_yunet(frame) if self.backend == "yunet" else self._detect_ssd(frame)
+        scale = self._upscale_factor(h, w)
+        src = frame if scale == 1.0 else cv2.resize(
+            frame, (int(round(w * scale)), int(round(h * scale))), interpolation=cv2.INTER_LINEAR)
+        raw = self._detect_yunet(src) if self.backend == "yunet" else self._detect_ssd(src)
 
         results = []
         for (x1, y1, x2, y2, conf) in raw:
+            x1, y1, x2, y2 = x1 / scale, y1 / scale, x2 / scale, y2 / scale
             startX, startY = max(0, int(x1)), max(0, int(y1))
             endX, endY = min(w - 1, int(x2)), min(h - 1, int(y2))
             if endX <= startX or endY <= startY:
@@ -139,6 +147,18 @@ class FaceDetector:
                 continue
             results.append((startX, startY, endX, endY, float(conf)))
         return results
+
+    def _upscale_factor(self, h, w):
+        """
+        Small photos are enlarged before YuNet runs: it rarely fires on faces
+        under ~20px, which is the median face in the training photos. Boxes
+        are mapped back, so callers always get original coordinates. Frames
+        already at upscale_to (e.g. a 720p webcam) are left alone, and the
+        SSD resizes everything to 300x300 anyway.
+        """
+        if self.backend != "yunet" or not self.upscale_to or max(h, w) >= self.upscale_to:
+            return 1.0
+        return min(self.max_upscale, self.upscale_to / float(max(h, w)))
 
     def _detect_yunet(self, frame):
         h, w = frame.shape[:2]

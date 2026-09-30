@@ -31,6 +31,8 @@ FACE_WEIGHTS_PATH = os.path.join(MODEL_DIR, "res10_300x300_ssd_iter_140000.caffe
 FACE_CONFIDENCE_THRESHOLD = 0.5    # Min confidence to consider a face detection valid
 FACE_NMS_THRESHOLD = 0.3           # IoU above which overlapping face boxes are merged
 MIN_DETECT_FACE_SIZE = 10          # Ignore detections smaller than this (px)
+DETECT_UPSCALE_TO = 800            # Enlarge smaller frames to this longer side before YuNet (0 = off)
+DETECT_MAX_UPSCALE = 4.0           # ...but never by more than this factor
 MASK_CONFIDENCE_THRESHOLD = 0.6    # Min confidence for mask prediction
 MASK_TTA = True                    # Average each face with its mirror image (≈2x classifier cost)
 INPUT_SIZE = (160, 160)            # Model input size (median training face is ~20px, so 224 buys nothing)
