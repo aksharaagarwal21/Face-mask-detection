@@ -11,7 +11,9 @@ import threading
 from datetime import datetime
 from config import VIOLATION_LOG_PATH, SESSION_LOG_PATH, ANALYTICS_LOG_PATH, LOGS_DIR
 
-# Configure root logger
+# Configure root logger. logs/ is git-ignored, so on a fresh clone it doesn't
+# exist yet and the FileHandler would fail at import time.
+os.makedirs(LOGS_DIR, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
