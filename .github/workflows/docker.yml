@@ -1,0 +1,48 @@
+name: docker
+
+on:
+  push:
+    paths: ["Dockerfile", ".dockerignore", "requirements.txt", "app.py", "pipeline.py",
+            "face_detector.py", "mask_detector.py", "models/**", ".github/workflows/docker.yml"]
+  pull_request:
+
+jobs:
+  image:
+    name: Build the image and analyse a photo through it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: docker build -t face-mask-detection .
+
+      - name: Start the container
+        run: docker run -d --name fmd -p 5000:5000 face-mask-detection
+
+      - name: Wait until /api/model answers
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:5000/api/model > model.json && break
+            sleep 2
+          done
+          python3 -m json.tool model.json
+
+      - name: Analyse a photo with faces through /api/predict
+        run: |
+          curl -sf -F image=@docs/dashboard_photo_analysis.png http://127.0.0.1:5000/api/predict > result.json
+          python3 - <<'PY'
+          import json
+          r = json.load(open("result.json"))
+          print(r["counts"], f'{r["inference_ms"]} ms')
+          assert r["counts"]["total"] > 0, "no faces found"
+          PY
+
+      - name: Container health check
+        run: |
+          sleep 35
+          docker inspect --format '{{.State.Health.Status}}' fmd | tee health.txt
+          grep -q healthy health.txt
+
+      - name: Container logs
+        if: always()
+        run: docker logs fmd 2>&1 | tail -50
