@@ -19,7 +19,7 @@ import logging
 from config import (
     FACE_PROTOTXT_PATH, FACE_WEIGHTS_PATH, YUNET_MODEL_PATH, FACE_DETECTOR_BACKEND,
     FACE_CONFIDENCE_THRESHOLD, FACE_NMS_THRESHOLD, MIN_DETECT_FACE_SIZE, MODEL_DIR,
-    DETECT_UPSCALE_TO, DETECT_MAX_UPSCALE
+    DETECT_UPSCALE_TO, DETECT_MAX_UPSCALE, FAR_RANGE_SCALE, FAR_RANGE_MAX_SIDE
 )
 from utils import crop_face
 
@@ -120,18 +120,21 @@ class FaceDetector:
         return net
 
     # ── Detection ─────────────────────────────────────────────────────────────
-    def detect(self, frame):
+    def detect(self, frame, far=False):
         """
         Detect faces in a frame.
 
         Args:
             frame: BGR numpy array
+            far: long-range mode for distant faces: always enlarge the frame
+                 (FAR_RANGE_SCALE, at most FAR_RANGE_MAX_SIDE on the longer
+                 side). About 4x slower on a 1080p frame.
 
         Returns:
             List of tuples: (startX, startY, endX, endY, confidence)
         """
         h, w = frame.shape[:2]
-        scale = self._upscale_factor(h, w)
+        scale = self._upscale_factor(h, w, self._far_target(h, w) if far else None)
         src = frame if scale == 1.0 else cv2.resize(
             frame, (int(round(w * scale)), int(round(h * scale))), interpolation=cv2.INTER_LINEAR)
         raw = self._detect_yunet(src) if self.backend == "yunet" else self._detect_ssd(src)
@@ -148,7 +151,7 @@ class FaceDetector:
             results.append((startX, startY, endX, endY, float(conf)))
         return results
 
-    def _upscale_factor(self, h, w):
+    def _upscale_factor(self, h, w, upscale_to=None):
         """
         Small photos are enlarged before YuNet runs: it rarely fires on faces
         under ~20px, which is the median face in the training photos. Boxes
@@ -156,9 +159,14 @@ class FaceDetector:
         already at upscale_to (e.g. a 720p webcam) are left alone, and the
         SSD resizes everything to 300x300 anyway.
         """
-        if self.backend != "yunet" or not self.upscale_to or max(h, w) >= self.upscale_to:
+        target = self.upscale_to if upscale_to is None else upscale_to
+        if self.backend != "yunet" or not target or max(h, w) >= target:
             return 1.0
-        return min(self.max_upscale, self.upscale_to / float(max(h, w)))
+        return min(self.max_upscale, target / float(max(h, w)))
+
+    def _far_target(self, h, w):
+        """Longer side to enlarge to in long-range mode."""
+        return min(FAR_RANGE_MAX_SIDE, max(self.upscale_to or 0, FAR_RANGE_SCALE * max(h, w)))
 
     def _detect_yunet(self, frame):
         h, w = frame.shape[:2]
@@ -195,7 +203,7 @@ class FaceDetector:
         return [(boxes[i][0], boxes[i][1], boxes[i][0] + boxes[i][2],
                  boxes[i][1] + boxes[i][3], scores[i]) for i in np.array(keep).flatten()]
 
-    def detect_faces_rois(self, frame):
+    def detect_faces_rois(self, frame, far=False):
         """
         Detect faces and return both bounding boxes and ROI crops.
 
@@ -207,7 +215,7 @@ class FaceDetector:
             rois: list of face ROI numpy arrays (BGR)
         """
         locs, rois = [], []
-        for loc in self.detect(frame):
+        for loc in self.detect(frame, far=far):
             face_roi = crop_face(frame, loc[:4])
             if face_roi.size == 0:
                 continue

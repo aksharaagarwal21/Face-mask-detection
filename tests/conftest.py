@@ -17,7 +17,7 @@ class FakeFaceDetector:
     def __init__(self, boxes):
         self.boxes = boxes
 
-    def detect_faces_rois(self, frame):
+    def detect_faces_rois(self, frame, far=False):
         from utils import crop_face
         return list(self.boxes), [crop_face(frame, b[:4]) for b in self.boxes]
 

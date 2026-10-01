@@ -321,7 +321,8 @@ def api_predict():
 
     Send the image as multipart form field "image" or as the raw request
     body. Returns the MaskPipeline.analyze() JSON, or the annotated image as
-    JPEG with ?annotate=1.
+    JPEG with ?annotate=1. ?range=far enables long-range detection for
+    distant faces (slower).
 
         curl -F image=@photo.jpg http://127.0.0.1:5000/api/predict
     """
@@ -332,11 +333,13 @@ def api_predict():
     if frame is None:
         return jsonify({"error": "Send an image (JPEG/PNG) as form field 'image' or as the body"}), 400
 
+    far = request.args.get("range", "near").lower() == "far"
     with _pipeline_lock:
         pipeline = _get_pipeline()          # first request loads the models
         t0 = time.perf_counter()
-        result = pipeline.analyze(frame)
+        result = pipeline.analyze(frame, far=far)
         result["inference_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    result["range"] = "far" if far else "near"
 
     if request.args.get("annotate", "").lower() in ("1", "true", "yes"):
         ok, buf = cv2.imencode(".jpg", pipeline.annotate(frame, result),

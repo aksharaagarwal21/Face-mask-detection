@@ -50,3 +50,14 @@ def test_no_upscaling_for_ssd_or_when_disabled():
 def test_yunet_finds_no_faces_in_a_blank_frame():
     detector = FaceDetector(backend="yunet")
     assert detector.detect(np.zeros((267, 400, 3), np.uint8)) == []
+
+
+@pytest.mark.parametrize("h,w,expected", [
+    (1080, 1920, 2.0),     # phone frame: 1080p -> 4K
+    (267, 400, 2.0),       # small photo: same as near mode
+    (270, 480, 2.0),       # zoomed-in crop
+    (3024, 4032, 1.0),     # 12 MP photo is already past the 3840 cap; never shrunk
+])
+def test_far_mode_upscale_factor(h, w, expected):
+    d = detector_without_net()
+    assert d._upscale_factor(h, w, d._far_target(h, w)) == pytest.approx(expected)
