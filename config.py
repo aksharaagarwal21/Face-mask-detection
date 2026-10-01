@@ -28,6 +28,7 @@ SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 MASK_MODEL_PATH = os.path.join(MODEL_DIR, "mask_detector.keras")
 MASK_TFLITE_PATH = os.path.join(MODEL_DIR, "export", "mask_detector_fp16.tflite")  # python export.py
 MASK_RUNTIME = "auto"              # auto (TFLite if exported, else Keras) | keras | tflite
+MASK_TFLITE_THREADS = min(8, os.cpu_count() or 1)  # TFLite runs single-threaded unless told otherwise
 LABEL_ENCODER_PATH = os.path.join(MODEL_DIR, "label_encoder.pkl")
 MODEL_INFO_PATH = os.path.join(MODEL_DIR, "model_info.json")      # backbone, input size, val metrics
 METRICS_PATH = os.path.join(MODEL_DIR, "test_metrics.json")       # written by evaluate.py
