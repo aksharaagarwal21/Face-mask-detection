@@ -498,3 +498,54 @@ function showToast(message, type = 'info') {
 
 // ── Auto-refresh logs every 10 seconds ────────────────────────────────────────
 setInterval(refreshLogs, 10000);
+
+// ── Connect a phone ────────────────────────────────────────────────────────────
+async function openPhoneDialog() {
+  const body = document.getElementById('phoneBody');
+  body.innerHTML = '<p class="phone-note">Loading…</p>';
+  document.getElementById('phoneDialog').showModal();
+  let urls = [];
+  try {
+    const res = await fetch('/api/connect');
+    if (res.ok) urls = (await res.json()).phone_urls || [];
+  } catch (e) { /* offline */ }
+
+  if (!urls.length) {
+    body.innerHTML = `
+      <p class="phone-note">Phones need the server on the local network over HTTPS. Stop this
+        server and start it in field mode:</p>
+      <pre class="phone-cmd">python app.py --field</pre>
+      <p class="phone-note">Then open this dialog again and scan the code with the phone.
+        <a href="/field">Open field mode on this computer</a> to try it here.</p>`;
+    return;
+  }
+  const url = urls[0];
+  let qrSvg = '';
+  if (window.qrcode) {
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    qrSvg = qr.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
+  }
+  body.innerHTML = `
+    <div class="phone-grid">
+      <div class="phone-qr">${qrSvg || '<p class="phone-note">QR library unavailable offline: type the link instead.</p>'}</div>
+      <ol class="phone-steps">
+        <li>Connect the phone to the <b>same Wi-Fi</b> as this computer.</li>
+        <li>Scan the code with the phone camera.</li>
+        <li>The browser warns about the certificate once: tap <b>Advanced → Proceed</b>.</li>
+        <li>Allow camera access. Add it to the home screen for a full-screen app.</li>
+      </ol>
+    </div>
+    <p class="phone-note">Link (contains the access key, so share it only with your team):</p>
+    <pre class="phone-cmd" id="phoneUrl"></pre>
+    <button class="btn btn-sm btn-secondary" onclick="copyPhoneUrl()">⧉ Copy link</button>`;
+  document.getElementById('phoneUrl').textContent = url;
+}
+
+function copyPhoneUrl() {
+  const text = document.getElementById('phoneUrl').textContent;
+  navigator.clipboard.writeText(text).then(
+    () => showToast('Link copied', 'success'),
+    () => showToast('Copy failed: select the link and copy it', 'warning'));
+}

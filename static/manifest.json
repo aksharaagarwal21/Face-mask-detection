@@ -1,0 +1,15 @@
+{
+  "name": "Mask Check — Field",
+  "short_name": "Mask Check",
+  "description": "Check mask compliance from a distance with the phone's back camera.",
+  "start_url": "/field",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#05070c",
+  "theme_color": "#05070c",
+  "icons": [
+    {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}

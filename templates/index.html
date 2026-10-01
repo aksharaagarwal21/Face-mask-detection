@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
@@ -27,8 +28,16 @@
         <span class="status-text">Connecting…</span>
       </div>
       <span class="session-id" id="sessionId">Session: —</span>
+      <button class="btn btn-sm btn-accent" id="btnPhone" onclick="openPhoneDialog()">📱 Use a phone</button>
     </div>
   </header>
+
+  <!-- ═══ CONNECT A PHONE ═══ -->
+  <dialog class="phone-dialog" id="phoneDialog">
+    <h2>📱 Use a phone's back camera</h2>
+    <div id="phoneBody"></div>
+    <form method="dialog"><button class="btn btn-secondary">Close</button></form>
+  </dialog>
 
   <!-- ═══ MAIN GRID ═══ -->
   <main class="main-grid">

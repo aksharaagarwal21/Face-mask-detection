@@ -369,6 +369,30 @@ body {
 
 .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.75rem; }
 
+/* ── Connect a phone ── */
+.phone-dialog {
+  margin: auto;                       /* the global reset removes <dialog>'s centering */
+  width: min(92vw, 620px);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 1.4rem;
+}
+.phone-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+.phone-dialog h2 { font-size: 1.05rem; margin-bottom: 0.8rem; }
+.phone-dialog form { margin-top: 1rem; text-align: right; }
+.phone-grid { display: grid; grid-template-columns: 220px 1fr; gap: 1rem; align-items: center; }
+.phone-qr { background: #fff; border-radius: var(--radius-sm); padding: 6px; }
+.phone-qr svg { display: block; width: 100%; height: auto; }
+.phone-steps { font-size: 0.85rem; color: var(--text-secondary); padding-left: 1.2rem; line-height: 1.6; }
+.phone-note { font-size: 0.8rem; color: var(--text-secondary); margin: 0.8rem 0 0.4rem; }
+.phone-note a { color: var(--accent-cyan); }
+.phone-cmd { font-family: var(--font-mono); font-size: 0.78rem; background: var(--bg-base);
+  border: 1px solid var(--glass-border); border-radius: var(--radius-sm); padding: 0.6rem;
+  white-space: pre-wrap; word-break: break-all; margin-bottom: 0.6rem; }
+@media (max-width: 600px) { .phone-grid { grid-template-columns: 1fr; } }
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 1.5rem; right: 1.5rem;
