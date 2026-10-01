@@ -411,6 +411,15 @@ def api_model():
     })
 
 
+@app.route("/api/connect")
+def api_connect():
+    """Link (with access key) for phones; only shown on this computer itself."""
+    from secure_access import is_local_request
+    if not is_local_request():
+        return jsonify({"error": "only available on the computer running the server"}), 403
+    return jsonify({"phone_urls": app.config.get("PHONE_URLS", [])})
+
+
 @app.errorhandler(413)
 def too_large(_):
     return jsonify({"error": f"Upload larger than {MAX_UPLOAD_MB} MB"}), 413
@@ -436,13 +445,44 @@ def api_heatmap():
 
 if __name__ == "__main__":
     import argparse
+    from secure_access import lan_ip, new_access_key, ensure_certificate, require_access_key
+
     parser = argparse.ArgumentParser(description="Face Mask Detection Web Dashboard")
     parser.add_argument("--host", default=FLASK_HOST)
     parser.add_argument("--port", type=int, default=FLASK_PORT)
     parser.add_argument("--debug", action="store_true", default=FLASK_DEBUG)
     parser.add_argument("--no-autostart", action="store_true",
                         help="Don't auto-start camera on launch")
+    parser.add_argument("--https", action="store_true",
+                        help="Serve over HTTPS with a self-signed certificate "
+                             "(phones only allow the camera on HTTPS pages)")
+    parser.add_argument("--access-key", default="auto",
+                        help="Key other devices must present: 'auto' generates one when the server "
+                             "is reachable from the network, 'none' disables it")
+    parser.add_argument("--field", action="store_true",
+                        help="Phone mode: reachable on the local network over HTTPS, access key on, "
+                             "this computer's webcam off; prints the link for phones")
     args = parser.parse_args()
+
+    if args.field:
+        args.host, args.https, args.no_autostart = "0.0.0.0", True, True
+
+    networked = args.host not in ("127.0.0.1", "localhost", "::1")
+    key = {"auto": new_access_key() if networked else None, "none": None}.get(args.access_key,
+                                                                             args.access_key)
+    require_access_key(app, key)
+
+    ssl_context = None
+    scheme = "https" if args.https else "http"
+    ip = lan_ip()
+    if args.https:
+        ssl_context = ensure_certificate(os.path.join(os.path.dirname(os.path.abspath(__file__)), "certs"),
+                                         [ip] if networked else [])
+
+    phone_urls = []
+    if networked:
+        phone_urls = [f"{scheme}://{ip}:{args.port}/field" + (f"?key={key}" if key else "")]
+    app.config["PHONE_URLS"] = phone_urls
 
     # Auto-start detection thread
     if not args.no_autostart:
@@ -451,12 +491,21 @@ if __name__ == "__main__":
         _camera_thread.start()
         logger.info("🟢 Camera detection thread auto-started")
 
-    print(f"\n{'='*55}")
+    local = f"{scheme}://127.0.0.1:{args.port}"
+    print(f"\n{'='*64}")
     print("  🎭 FACE MASK DETECTION — WEB DASHBOARD")
-    print(f"{'='*55}")
-    print(f"  URL: http://127.0.0.1:{args.port}")
-    print(f"  Stream: http://127.0.0.1:{args.port}/video_feed")
-    print(f"  API:    http://127.0.0.1:{args.port}/api/stats")
-    print(f"{'='*55}\n")
+    print(f"{'='*64}")
+    print(f"  Dashboard (this computer): {local}")
+    print(f"  Field mode (this computer): {local}/field")
+    for url in phone_urls:
+        print(f"  Phone, same Wi-Fi:          {url}")
+        print("                              (or scan the QR code on the dashboard)")
+    if key:
+        print(f"  Access key: {key}")
+    if args.https:
+        print("  Self-signed certificate: the browser warns once; choose Advanced -> Proceed.")
+    if networked and not key:
+        print("  ⚠ No access key: anyone on this network can open the camera stream and API.")
+    print(f"{'='*64}\n")
 
-    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)
+    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True, ssl_context=ssl_context)

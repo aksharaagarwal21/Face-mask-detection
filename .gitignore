@@ -51,3 +51,6 @@ models/checkpoints/
 
 # TFLite exports (regenerate with: python export.py)
 models/export/*.tflite
+
+# Self-signed HTTPS certificate for phone access (python app.py --field)
+certs/
