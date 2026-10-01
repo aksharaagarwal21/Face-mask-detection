@@ -191,7 +191,35 @@ docker run -p 5000:5000 -e FMD_ACCESS_KEY=choose-a-long-key face-mask-detection
 can reach the port can use the API.
 
 This serves the dashboard and API with gunicorn. The live stream needs a
-camera passed into the container (`--device /dev/video0` on Linux).
+camera passed into the container (`--device /dev/video0` on Linux). The
+container listens on `$PORT` (default 5000), so hosts that assign a port work
+too.
+
+### Deploy to Hugging Face
+
+The app runs on a free Hugging Face Space (Docker, CPU). That gives you an
+HTTPS link that phones can open from any network, with no local server.
+
+```bash
+hf auth login                  # once, with a Write token from huggingface.co/settings/tokens
+python deploy_hf_space.py      # creates or updates spaces/<you>/face-mask-detection
+```
+
+The script uploads the last commit (not uncommitted edits), without tests and
+docs. On the first run it creates a random access key and stores it as the
+Space secret `FMD_ACCESS_KEY`. It then waits for the build (~10 minutes the
+first time) and checks the live app. At the end it prints the phone link,
+`https://<you>-face-mask-detection.hf.space/field?key=...`. The key is also
+saved in `.deploy/hf_space.json` (git-ignored).
+
+The Space is public, but every page and API call needs the key.
+`--new-key` replaces the key, after which old links stop working. `--private`
+limits the Space to signed-in members of your account.
+
+To redeploy automatically on every push to `main`, add your Hugging Face token
+as the repository secret `HF_TOKEN` (*Settings → Secrets and variables →
+Actions*). `.github/workflows/deploy.yml` then runs the same script and never
+prints the key.
 
 ## Reproducing the model
 

@@ -1,0 +1,36 @@
+name: deploy
+
+# Redeploys the Hugging Face Space on every push to main.
+# Needs a repository secret HF_TOKEN (a Hugging Face Write token) and a Space
+# created once with `python deploy_hf_space.py` on your own computer; without
+# the secret this workflow does nothing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: hf-space
+  cancel-in-progress: false
+
+jobs:
+  space:
+    name: Deploy to Hugging Face Space
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - name: Skip when HF_TOKEN isn't set
+        if: env.HF_TOKEN == ''
+        run: echo "No HF_TOKEN secret, so nothing to deploy (see README, 'Deploy to Hugging Face')."
+      - if: env.HF_TOKEN != ''
+        uses: actions/checkout@v4
+      - if: env.HF_TOKEN != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: env.HF_TOKEN != ''
+        run: pip install huggingface_hub
+      - name: Upload the commit and wait for the Space to run
+        if: env.HF_TOKEN != ''
+        run: python deploy_hf_space.py
