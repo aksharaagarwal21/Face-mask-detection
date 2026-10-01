@@ -29,6 +29,12 @@ logger = logging.getLogger("FlaskApp")
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024   # larger uploads get HTTP 413
 
+# Under gunicorn (e.g. the Docker image) the __main__ block doesn't run, so
+# FMD_ACCESS_KEY is how to require an access key there.
+if os.environ.get("FMD_ACCESS_KEY"):
+    from secure_access import require_access_key as _require_access_key
+    _require_access_key(app, os.environ["FMD_ACCESS_KEY"])
+
 # Photo analysis (/api/predict) shares one pipeline; the lock serialises
 # requests because a TFLite interpreter must not run on two threads at once.
 _pipeline = None
@@ -462,9 +468,10 @@ if __name__ == "__main__":
     parser.add_argument("--https", action="store_true",
                         help="Serve over HTTPS with a self-signed certificate "
                              "(phones only allow the camera on HTTPS pages)")
-    parser.add_argument("--access-key", default="auto",
+    parser.add_argument("--access-key", default=os.environ.get("FMD_ACCESS_KEY", "auto"),
                         help="Key other devices must present: 'auto' generates one when the server "
-                             "is reachable from the network, 'none' disables it")
+                             "is reachable from the network, 'none' disables it "
+                             "(default: $FMD_ACCESS_KEY, else auto)")
     parser.add_argument("--field", action="store_true",
                         help="Phone mode: reachable on the local network over HTTPS, access key on, "
                              "this computer's webcam off; prints the link for phones")

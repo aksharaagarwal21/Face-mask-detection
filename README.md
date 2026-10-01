@@ -183,8 +183,12 @@ rejected (`MAX_UPLOAD_MB` in `config.py`).
 
 ```bash
 docker build -t face-mask-detection .
-docker run -p 5000:5000 face-mask-detection
+docker run -p 5000:5000 -e FMD_ACCESS_KEY=choose-a-long-key face-mask-detection
 ```
+
+`FMD_ACCESS_KEY` makes other machines present the key (`X-Access-Key` header,
+`?key=`, or the cookie set by the first `?key=` visit). Without it, anyone who
+can reach the port can use the API.
 
 This serves the dashboard and API with gunicorn. The live stream needs a
 camera passed into the container (`--device /dev/video0` on Linux).

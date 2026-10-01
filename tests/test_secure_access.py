@@ -90,3 +90,19 @@ def test_connect_endpoint_only_on_this_computer(monkeypatch):
     r = c.get("/api/connect", environ_base={"REMOTE_ADDR": "127.0.0.1"})
     assert r.status_code == 200 and r.get_json()["phone_urls"][0].endswith("key=k")
     assert c.get("/api/connect", environ_base=REMOTE).status_code == 403
+
+
+def test_env_var_turns_the_key_on_under_gunicorn():
+    # imported in a fresh interpreter, the way gunicorn loads app:app
+    import subprocess, sys, textwrap
+    code = textwrap.dedent("""
+        import app
+        c = app.app.test_client()
+        remote = {"REMOTE_ADDR": "172.17.0.1"}          # docker bridge
+        print(c.get("/api/stats", environ_base=remote).status_code,
+              c.get("/api/stats", environ_base=remote, headers={"X-Access-Key": "k3y"}).status_code)
+    """)
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True,
+                         env={**os.environ, "FMD_ACCESS_KEY": "k3y"}, timeout=120)
+    assert out.stdout.split()[-2:] == ["401", "200"], out.stdout + out.stderr
