@@ -89,6 +89,7 @@ def test_connect_endpoint_only_on_this_computer(monkeypatch):
     c = appmod.app.test_client()
     r = c.get("/api/connect", environ_base={"REMOTE_ADDR": "127.0.0.1"})
     assert r.status_code == 200 and r.get_json()["phone_urls"][0].endswith("key=k")
+    # without an access key, other devices don't get it
     assert c.get("/api/connect", environ_base=REMOTE).status_code == 403
 
 

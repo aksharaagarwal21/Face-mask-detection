@@ -520,6 +520,8 @@ async function openPhoneDialog() {
     return;
   }
   const url = urls[0];
+  // a private network address means a local --field server (same Wi-Fi, self-signed certificate)
+  const lan = /^https?:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url);
   let qrSvg = '';
   if (window.qrcode) {
     const qr = qrcode(0, 'M');
@@ -530,10 +532,11 @@ async function openPhoneDialog() {
   body.innerHTML = `
     <div class="phone-grid">
       <div class="phone-qr">${qrSvg || '<p class="phone-note">QR library unavailable offline: type the link instead.</p>'}</div>
-      <ol class="phone-steps">
+      <ol class="phone-steps">${lan ? `
         <li>Connect the phone to the <b>same Wi-Fi</b> as this computer.</li>
         <li>Scan the code with the phone camera.</li>
-        <li>The browser warns about the certificate once: tap <b>Advanced → Proceed</b>.</li>
+        <li>The browser warns about the certificate once: tap <b>Advanced → Proceed</b>.</li>` : `
+        <li>Scan the code with the phone camera (works on any network).</li>`}
         <li>Allow camera access. Add it to the home screen for a full-screen app.</li>
       </ol>
     </div>

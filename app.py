@@ -35,6 +35,22 @@ if os.environ.get("FMD_ACCESS_KEY"):
     from secure_access import require_access_key as _require_access_key
     _require_access_key(app, os.environ["FMD_ACCESS_KEY"])
 
+
+def _public_phone_urls():
+    """
+    Field-mode link when the app runs at a public address: FMD_PUBLIC_URL, or
+    the address of a Hugging Face Space (Spaces set SPACE_HOST).
+    """
+    base = os.environ.get("FMD_PUBLIC_URL") or (
+        f"https://{os.environ['SPACE_HOST']}" if os.environ.get("SPACE_HOST") else "")
+    if not base:
+        return []
+    key = os.environ.get("FMD_ACCESS_KEY")
+    return [base.rstrip("/") + "/field" + (f"?key={key}" if key else "")]
+
+
+app.config["PHONE_URLS"] = _public_phone_urls()
+
 # Photo analysis (/api/predict) shares one pipeline; the lock serialises
 # requests because a TFLite interpreter must not run on two threads at once.
 _pipeline = None
@@ -425,9 +441,13 @@ def api_model():
 
 @app.route("/api/connect")
 def api_connect():
-    """Link (with access key) for phones; only shown on this computer itself."""
+    """
+    Link (with access key) for phones. Shown on this computer itself, and to
+    other devices only when an access key is set: they can only reach this
+    route by presenting the key (secure_access), so they already know it.
+    """
     from secure_access import is_local_request
-    if not is_local_request():
+    if not (is_local_request() or app.config.get("ACCESS_KEY")):
         return jsonify({"error": "only available on the computer running the server"}), 403
     return jsonify({"phone_urls": app.config.get("PHONE_URLS", [])})
 
@@ -495,7 +515,7 @@ if __name__ == "__main__":
     phone_urls = []
     if networked:
         phone_urls = [f"{scheme}://{ip}:{args.port}/field" + (f"?key={key}" if key else "")]
-    app.config["PHONE_URLS"] = phone_urls
+    app.config["PHONE_URLS"] = phone_urls or app.config["PHONE_URLS"]
 
     # Auto-start detection thread
     if not args.no_autostart:

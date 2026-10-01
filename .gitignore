@@ -54,3 +54,6 @@ models/export/*.tflite
 
 # Self-signed HTTPS certificate for phone access (python app.py --field)
 certs/
+
+# Deployment state (Space name, access key): python deploy_hf_space.py
+.deploy/
