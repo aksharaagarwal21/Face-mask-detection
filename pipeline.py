@@ -39,9 +39,9 @@ class MaskPipeline:
         self.face_detector = face_detector
         self.mask_detector = mask_detector
 
-    def analyze(self, frame):
-        """Detect and classify every face in a BGR image."""
-        locs, rois = self.face_detector.detect_faces_rois(frame)
+    def analyze(self, frame, far=False):
+        """Detect and classify every face in a BGR image (far=True: long-range detection)."""
+        locs, rois = self.face_detector.detect_faces_rois(frame, far=far)
         probs = self.mask_detector.predict_probs(rois)
         classes = self.mask_detector.classes
 

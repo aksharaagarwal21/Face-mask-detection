@@ -44,6 +44,8 @@ FACE_NMS_THRESHOLD = 0.3           # IoU above which overlapping face boxes are 
 MIN_DETECT_FACE_SIZE = 10          # Ignore detections smaller than this (px)
 DETECT_UPSCALE_TO = 800            # Enlarge smaller frames to this longer side before YuNet (0 = off)
 DETECT_MAX_UPSCALE = 4.0           # ...but never by more than this factor
+FAR_RANGE_SCALE = 2.0              # long-range mode (distant faces): enlarge every frame by this...
+FAR_RANGE_MAX_SIDE = 3840          # ...up to this longer side (1080p -> 4K, ~4x detector time)
 MASK_CONFIDENCE_THRESHOLD = 0.6    # Min confidence for mask prediction
 MASK_TTA = True                    # Average each face with its mirror image (≈2x classifier cost)
 INPUT_SIZE = (160, 160)            # Model input size (median training face is ~20px, so 224 buys nothing)

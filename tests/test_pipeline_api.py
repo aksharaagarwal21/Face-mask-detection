@@ -77,3 +77,9 @@ def test_api_model(client):
     r = client.get("/api/model")
     assert r.status_code == 200
     assert {"backbone", "test", "end_to_end", "temperature"} <= set(r.get_json())
+
+
+def test_api_predict_range_parameter(client, frame):
+    data = cv2.imencode(".png", frame)[1].tobytes()
+    assert client.post("/api/predict", data=data).get_json()["range"] == "near"
+    assert client.post("/api/predict?range=far", data=data).get_json()["range"] == "far"
