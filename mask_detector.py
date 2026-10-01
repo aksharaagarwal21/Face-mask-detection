@@ -16,7 +16,7 @@ import logging
 import numpy as np
 from config import (
     MASK_MODEL_PATH, LABEL_ENCODER_PATH, CLASSES, MASK_CONFIDENCE_THRESHOLD, MASK_TTA,
-    MASK_RUNTIME, MASK_TFLITE_PATH
+    MASK_RUNTIME, MASK_TFLITE_PATH, MASK_TFLITE_THREADS
 )
 from calibrate import apply_temperature, load_temperature
 
@@ -80,8 +80,8 @@ class MaskDetector:
                 f"TFLite model not found at: {path}\n"
                 "Export it first: python export.py --variants fp16"
             )
-        runner = TFLiteRunner(model_path=path)
-        logger.info(f"✅ TFLite model loaded from {path}")
+        runner = TFLiteRunner(model_path=path, num_threads=MASK_TFLITE_THREADS)
+        logger.info(f"✅ TFLite model loaded from {path} ({MASK_TFLITE_THREADS} threads)")
         return runner
 
     def _load_classes(self, path):
