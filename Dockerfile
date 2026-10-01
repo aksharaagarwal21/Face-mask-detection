@@ -1,8 +1,10 @@
 # Web dashboard + REST API (/api/predict photo analysis) on CPU.
 #
 #   docker build -t face-mask-detection .
-#   docker run -p 5000:5000 face-mask-detection
-#   curl -F image=@photo.jpg http://127.0.0.1:5000/api/predict
+#   docker run -p 5000:5000 -e FMD_ACCESS_KEY=choose-a-long-key face-mask-detection
+#   curl -H "X-Access-Key: choose-a-long-key" -F image=@photo.jpg http://127.0.0.1:5000/api/predict
+#
+# Without FMD_ACCESS_KEY anyone who can reach the port can use the API.
 #
 # The live webcam stream needs a camera device inside the container
 # (Linux hosts: docker run --device /dev/video0 ...).
