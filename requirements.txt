@@ -5,6 +5,7 @@ numpy>=1.23
 scipy>=1.10               # tracker assignment, temperature fitting
 scikit-learn>=1.2         # metrics, photo-level train/val/test split
 flask>=2.3
+cryptography>=42         # self-signed certificate for app.py --https / --field
 matplotlib>=3.7
 seaborn>=0.12
 tqdm>=4.65

@@ -18,7 +18,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install light dependencies
-        run: pip install opencv-python-headless numpy scipy flask pytest
+        run: pip install opencv-python-headless numpy scipy flask cryptography pytest
       - name: Run tests (model tests skip themselves)
         run: python -m pytest -q -rs
 
