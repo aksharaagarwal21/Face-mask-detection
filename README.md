@@ -69,6 +69,10 @@ Grad-CAM shows the model looking at the nose, mouth and mask region:
 - **REST API**: `POST /api/predict` returns every face as JSON
 - **Explainability**: Grad-CAM heatmaps (`explain.py`)
 - **TFLite export**, checked against the Keras model on the test set (`export.py`)
+- **Field mode for phones** (`/field`): back camera, optical/digital zoom with
+  tap-to-aim, a long-range detection mode for distant faces, enlarged
+  thumbnails of flagged people, freeze/photo/save. Served over HTTPS with an
+  access key.
 - **Batch tools**: images and folders with JSON/CSV reports, and video files
 - **Tests** (pytest), **GitHub Actions CI** and a **Dockerfile**
 
@@ -91,6 +95,47 @@ TFLite model once; it is then used automatically:
 ```bash
 python export.py        # its accuracy check needs the prepared dataset (see below)
 ```
+
+### Field mode: phones and distance
+
+For checking a crowd from a distance with a phone's back camera:
+
+<img src="docs/field_mode.png" width="560" alt="Field mode on a phone: full view of a distant crowd, and zoomed in on flagged people">
+
+```bash
+python app.py --field
+```
+
+This serves the app on the local network over HTTPS (with a self-signed
+certificate) and requires an access key from other devices. The console
+prints the phone link. On the computer, the dashboard's **📱 Use a phone**
+button shows it as a QR code.
+
+1. Connect the phone to the same Wi-Fi and scan the QR code.
+2. Accept the certificate warning once (*Advanced → Proceed*) and allow
+   camera access.
+3. Optionally add it to the home screen for a full-screen app.
+
+On Windows, allow Python through the firewall when asked, or the phone can't
+connect.
+
+| | |
+|---|---|
+| **Zoom** | Pinch, the slider or +/−. Uses the phone's optical zoom when the browser exposes it, otherwise a digital crop of the full-resolution sensor image. Tap to aim at a spot; double-tap to reset. |
+| **Far range** | Long-range detection for small, distant faces (`/api/predict?range=far`). On simulated distant faces in 1080p frames it finds 89.2% of faces vs 73.2%, at ~4x the detector time. |
+| **Possible violations** | Every flagged person shown enlarged, with confidence and a tracking number. Tap one to zoom onto them. |
+| **Freeze / Photo** | Freeze holds a frame to inspect at full resolution. Photo uses the phone's own camera app at full resolution (works without HTTPS too). |
+| **Save** | Annotated copy with time and counts, saved on the phone only. Nothing is stored on the server. |
+| **Alerts** | Vibration and a beep once per newly flagged person (configurable). |
+
+On the development laptop (i7-1255U CPU), live analysis of a 1080p stream with
+a 23-face crowd runs at ~2.5 frames/s in near range and ~1 frame/s in far
+range. Zooming in is faster because fewer faces are in view.
+
+Distance helps only up to the camera's resolution. A face needs roughly
+10–16 pixels for the detector to find it. Optical zoom and 4K resolution
+(⚙ settings) put more pixels on a distant face; digital zoom cannot add
+detail. Flags are probabilities: verify in person before acting.
 
 ### REST API
 
@@ -118,6 +163,8 @@ curl -F image=@photo.jpg "http://127.0.0.1:5000/api/predict?annotate=1" -o annot
 |---|---|---|
 | `/api/predict` | POST | Analyse a photo (form field `image` or raw body; `?annotate=1` returns a JPEG) |
 | `/api/model` | GET | Backbone, temperature, test and end-to-end metrics |
+| `/field` | GET | Field mode page for phones and tablets |
+| `/api/connect` | GET | Phone link with access key (only answers the computer running the server) |
 | `/video_feed` | GET | MJPEG live stream |
 | `/api/stats` | GET | Current detection statistics |
 | `/api/timeline` | GET | Compliance time series |
@@ -127,7 +174,10 @@ curl -F image=@photo.jpg "http://127.0.0.1:5000/api/predict?annotate=1" -o annot
 | `/api/screenshot`, `/api/heatmap` | POST | Save the current frame / a position heatmap |
 | `/api/reset` | POST | Reset session stats and logs |
 
-Uploads over 10 MB are rejected (`MAX_UPLOAD_MB` in `config.py`).
+`/api/predict` options: `range=far` turns on long-range detection.
+`session=<id>` gives each face a stable `track_id` and smoothed labels across a
+client's frames; `reset=1` starts that tracking over. Uploads over 10 MB are
+rejected (`MAX_UPLOAD_MB` in `config.py`).
 
 ### Docker
 
@@ -176,7 +226,8 @@ frame ─► YuNet face detector (small frames upscaled first)
 ## Project structure
 
 ```
-├── app.py                 Flask dashboard + REST API
+├── app.py                 Flask dashboard + REST API (--field: phone access)
+├── secure_access.py       HTTPS certificate, access key, LAN address
 ├── pipeline.py            detect + classify one image -> JSON-ready dict
 ├── face_detector.py       YuNet (default) / SSD face detection, small-image upscaling
 ├── mask_detector.py       classifier inference: flip TTA, calibration, Keras or TFLite
@@ -195,7 +246,7 @@ frame ─► YuNet face detector (small frames upscaled first)
 ├── download_dataset.py    Kaggle download, face cropping, photo-level split
 ├── alert_system.py, analytics.py, logger.py, utils.py, config.py
 ├── models/                trained model, YuNet, metrics JSON, plots
-├── static/, templates/    dashboard front end
+├── static/, templates/    dashboard and field-mode front ends
 ├── tests/                 pytest suite
 └── Dockerfile, .github/workflows/tests.yml
 ```
@@ -209,8 +260,10 @@ Everything lives in `config.py`. The settings you are most likely to change:
 | `FACE_DETECTOR_BACKEND` | `yunet` | `yunet` or `ssd` |
 | `FACE_CONFIDENCE_THRESHOLD` | 0.5 | face detector score cut-off |
 | `DETECT_UPSCALE_TO` | 800 | enlarge smaller frames to this longer side before detection (0 = off) |
+| `FAR_RANGE_SCALE` / `FAR_RANGE_MAX_SIDE` | 2.0 / 3840 | long-range mode: enlarge every frame this much, up to this size |
 | `MASK_CONFIDENCE_THRESHOLD` | 0.6 | minimum calibrated confidence for a violation |
 | `MASK_RUNTIME` | `auto` | `auto` (TFLite if exported), `keras` or `tflite` |
+| `MASK_TFLITE_THREADS` | min(8, CPUs) | TFLite interpreter threads |
 | `MASK_TTA` | True | average each face with its mirror image |
 | `TRACK_SMOOTHING` | 0.5 | weight of the newest frame per face (1 = no smoothing) |
 | `CAMERA_INDEX` | 0 | webcam index |
@@ -219,7 +272,7 @@ Everything lives in `config.py`. The settings you are most likely to change:
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest            # 43 tests; the model tests skip without TensorFlow
+python -m pytest            # 59 tests; the model tests skip without TensorFlow
 ```
 
 ## Limitations
@@ -231,6 +284,8 @@ python -m pytest            # 43 tests; the model tests skip without TensorFlow
 - All data comes from one Kaggle dataset of mostly street and crowd photos. It
   has not been audited for demographic balance, and performance on other
   cameras, lighting conditions or populations is unmeasured.
+- The far-range numbers come from dataset photos placed in 1080p frames, not
+  from real long-distance footage.
 - The system detects masks, not identities. It should support human judgement,
   not replace it.
 
