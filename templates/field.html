@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#05070c" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Mask Check — Field</title>
+  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="icon" href="/static/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <link rel="stylesheet" href="/static/field.css" />
+</head>
+<body>
+  <main class="app" id="app">
+
+    <!-- ── Status ── -->
+    <header class="topbar">
+      <div class="status" id="status" data-state="starting">
+        <span class="dot"></span><span id="statusText">Starting</span>
+      </div>
+      <div class="metrics mono" id="metrics">—</div>
+      <button class="icon-btn" id="btnSettings" aria-label="Settings">⚙</button>
+    </header>
+
+    <!-- ── Counts ── -->
+    <section class="counts" aria-live="polite">
+      <div class="count c-total"><b id="nTotal">0</b><span>faces</span></div>
+      <div class="count c-mask"><b id="nMask">0</b><span>mask</span></div>
+      <div class="count c-nomask"><b id="nNoMask">0</b><span>no mask</span></div>
+      <div class="count c-incorrect"><b id="nIncorrect">0</b><span>incorrect</span></div>
+    </section>
+
+    <!-- ── Camera view ── -->
+    <section class="viewport" id="viewport">
+      <canvas id="view" aria-label="Camera view with detected faces"></canvas>
+      <video id="video" playsinline muted autoplay></video>
+
+      <div class="pills">
+        <span class="pill" id="rangePill">NEAR</span>
+        <span class="pill" id="zoomPill">1.0×</span>
+        <span class="pill pill-warn" id="modePill" hidden>FROZEN</span>
+      </div>
+
+      <div class="message" id="message" hidden>
+        <p id="messageText"></p>
+        <label class="btn btn-primary" for="photoInput">📷 Take a photo instead</label>
+      </div>
+
+      <div class="zoom" aria-label="Zoom">
+        <button class="zoom-btn" id="zoomOut" aria-label="Zoom out">−</button>
+        <input type="range" id="zoom" min="1" max="8" step="0.1" value="1" aria-label="Zoom level" />
+        <button class="zoom-btn" id="zoomIn" aria-label="Zoom in">+</button>
+      </div>
+      <p class="hint" id="hint">Tap to zoom in there · pinch to zoom · double-tap to reset</p>
+    </section>
+
+    <!-- ── Flagged faces ── -->
+    <section class="flagged">
+      <div class="flagged-head">
+        <h2>Possible violations</h2>
+        <span>Verify in person before acting</span>
+      </div>
+      <div class="flagged-list" id="flagged">
+        <p class="empty">None in view</p>
+      </div>
+    </section>
+
+    <!-- ── Controls ── -->
+    <nav class="controls">
+      <button class="ctrl" id="btnRange" aria-pressed="false">
+        <span class="ico">🔭</span><span class="lbl">Far range</span>
+      </button>
+      <button class="ctrl" id="btnFreeze" aria-pressed="false">
+        <span class="ico" id="freezeIco">⏸</span><span class="lbl" id="freezeLbl">Freeze</span>
+      </button>
+      <button class="ctrl" id="btnSave">
+        <span class="ico">💾</span><span class="lbl">Save</span>
+      </button>
+      <label class="ctrl" for="photoInput">
+        <span class="ico">📷</span><span class="lbl">Photo</span>
+      </label>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" hidden />
+    </nav>
+  </main>
+
+  <!-- ── Settings ── -->
+  <dialog class="sheet" id="settings">
+    <form method="dialog">
+      <h2>Settings</h2>
+      <label class="row">Camera
+        <select id="setCamera">
+          <option value="environment">Back</option>
+          <option value="user">Front</option>
+        </select>
+      </label>
+      <label class="row">Resolution
+        <select id="setResolution">
+          <option value="1280">720p (faster)</option>
+          <option value="1920">1080p</option>
+          <option value="3840">4K (most detail, slower)</option>
+        </select>
+      </label>
+      <label class="row">Sound alert for new violations <input type="checkbox" id="setSound" /></label>
+      <label class="row">Vibrate for new violations <input type="checkbox" id="setVibrate" /></label>
+      <label class="row">Label faces with masks <input type="checkbox" id="setLabelAll" /></label>
+      <label class="row">Keep screen on <input type="checkbox" id="setWake" /></label>
+      <p class="note">Detection runs on the computer that served this page; frames are
+        not stored there. "Save" keeps a copy on this phone only.</p>
+      <button class="btn btn-primary" value="close">Done</button>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/static/field.js"></script>
+</body>
+</html>

@@ -224,6 +224,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/field")
+def field():
+    """Phone / tablet field mode: back camera, zoom, flagged faces."""
+    return render_template("field.html")
+
+
 @app.route("/video_feed")
 def video_feed():
     return Response(

@@ -47,6 +47,11 @@ def test_key_in_header(locked):
     assert "Set-Cookie" not in r.headers
 
 
+def test_static_files_are_public(locked):
+    # the app icon and manifest are fetched by phones without cookies
+    assert locked.get("/static/missing.png", environ_base=REMOTE).status_code == 404   # not 401
+
+
 def test_this_computer_needs_no_key(locked):
     assert locked.get("/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).status_code == 200
 

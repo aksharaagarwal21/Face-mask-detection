@@ -140,7 +140,8 @@ def require_access_key(app, key):
     @app.before_request
     def _check_access_key():
         expected = app.config.get("ACCESS_KEY")
-        if not expected or is_local_request():
+        # /static/ is public code (and phones fetch the app icon without cookies)
+        if not expected or is_local_request() or request.path.startswith("/static/"):
             return None
         supplied = (request.args.get("key") or request.headers.get("X-Access-Key")
                     or request.cookies.get(COOKIE_NAME) or "")
