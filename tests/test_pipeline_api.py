@@ -83,3 +83,29 @@ def test_api_predict_range_parameter(client, frame):
     data = cv2.imencode(".png", frame)[1].tobytes()
     assert client.post("/api/predict", data=data).get_json()["range"] == "near"
     assert client.post("/api/predict?range=far", data=data).get_json()["range"] == "far"
+
+
+def test_apply_tracking_smooths_and_assigns_ids(pipeline, frame):
+    from tracker import CentroidTracker
+    t = CentroidTracker(classes=pipeline.mask_detector.classes)
+    first = pipeline.apply_tracking(pipeline.analyze(frame), t)
+    ids = [f["track_id"] for f in first["faces"]]
+    assert ids == [0, 1, 2]
+    # one bad frame for face 0: the raw label flips, the smoothed one doesn't
+    pipeline.mask_detector.probs[0] = probs_for("without_mask", 0.7)
+    second = pipeline.apply_tracking(pipeline.analyze(frame), t)
+    assert [f["track_id"] for f in second["faces"]] == ids
+    assert second["faces"][0]["label"] == "with_mask"
+    assert second["counts"]["with_mask"] == 1
+
+
+def test_api_session_tracking(client, frame):
+    data = cv2.imencode(".png", frame)[1].tobytes()
+    ids = lambda r: [f["track_id"] for f in r.get_json()["faces"]]
+    a = client.post("/api/predict?session=phone-1&reset=1", data=data)
+    b = client.post("/api/predict?session=phone-1", data=data)
+    assert ids(a) == ids(b) == [0, 1, 2]
+    other = client.post("/api/predict?session=phone-2&reset=1", data=data)
+    assert ids(other) == [0, 1, 2]                       # separate tracker per client
+    assert "track_id" not in client.post("/api/predict", data=data).get_json()["faces"][0]
+    assert client.post("/api/predict?session=bad%20id!", data=data).status_code == 400

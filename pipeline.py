@@ -68,6 +68,30 @@ class MaskPipeline:
             "image_size": [int(w), int(h)],
         }
 
+    def apply_tracking(self, result, tracker):
+        """
+        Fold one analyze() result into a CentroidTracker (consecutive frames
+        of one camera). Every face gets a stable "track_id", and its label,
+        confidence and violation flag are replaced by the per-face smoothed
+        values, so one blurry frame doesn't flip a label. Counts are redone.
+        """
+        classes = self.mask_detector.classes
+        faces = result["faces"]
+        probs = np.array([[f["scores"][c] for c in classes] for f in faces],
+                         dtype="float64").reshape(len(faces), len(classes))
+        tracker.update([f["box"] for f in faces], probs=probs)
+
+        counts = {"total": 0, **{cls: 0 for cls in classes}}
+        for f, track_id in zip(faces, tracker.detection_ids):
+            label, conf = tracker.smoothed(track_id)
+            f.update(track_id=int(track_id), label=label, confidence=round(conf, 4),
+                     violation=bool(self.mask_detector.is_violation(label, conf)))
+            counts["total"] += 1
+            counts[label] += 1
+        result["counts"] = counts
+        result["compliance_pct"] = round(compute_compliance_pct(counts), 1)
+        return result
+
     @staticmethod
     def annotate(frame, result):
         """Draw the boxes and labels of an analyze() result onto a copy of frame."""
