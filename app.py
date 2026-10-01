@@ -5,6 +5,7 @@ Features: MJPEG live stream, REST API, real-time stats, violation logs
 """
 
 import os
+import re
 import cv2
 import uuid
 import time
@@ -17,7 +18,8 @@ from flask import (
 from config import (
     FLASK_HOST, FLASK_PORT, FLASK_DEBUG, STREAM_QUALITY,
     CAMERA_INDEX, CLASS_COLORS, MASK_CONFIDENCE_THRESHOLD,
-    MODEL_INFO_PATH, METRICS_PATH, MODEL_DIR, MAX_UPLOAD_MB
+    MODEL_INFO_PATH, METRICS_PATH, MODEL_DIR, MAX_UPLOAD_MB,
+    FIELD_TRACK_MAX_DISTANCE, FIELD_TRACK_MAX_DISAPPEARED
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -31,6 +33,12 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024   # larger upload
 # requests because a TFLite interpreter must not run on two threads at once.
 _pipeline = None
 _pipeline_lock = threading.Lock()
+
+# Clients that stream frames (/field) pass ?session=<id>; each session has its
+# own tracker so labels are smoothed per face across that camera's frames.
+_track_sessions = {}    # session id -> (CentroidTracker, last used time)
+TRACK_SESSION_TTL = 300
+MAX_TRACK_SESSIONS = 50
 
 # ─── Global State ─────────────────────────────────────────────────────────────
 _frame_lock = threading.Lock()
@@ -314,6 +322,24 @@ def _get_pipeline():
     return _pipeline
 
 
+def _session_tracker(session_id, reset=False):
+    """Tracker for one streaming client (call with _pipeline_lock held)."""
+    from tracker import CentroidTracker
+    now = time.time()
+    for sid in [k for k, (_, ts) in _track_sessions.items() if now - ts > TRACK_SESSION_TTL]:
+        del _track_sessions[sid]
+    entry = _track_sessions.get(session_id)
+    if entry is None or reset:
+        if entry is None and len(_track_sessions) >= MAX_TRACK_SESSIONS:
+            del _track_sessions[min(_track_sessions, key=lambda k: _track_sessions[k][1])]
+        tracker = CentroidTracker(max_distance=FIELD_TRACK_MAX_DISTANCE,
+                                  max_disappeared=FIELD_TRACK_MAX_DISAPPEARED)
+    else:
+        tracker = entry[0]
+    _track_sessions[session_id] = (tracker, now)
+    return tracker
+
+
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
     """
@@ -322,7 +348,9 @@ def api_predict():
     Send the image as multipart form field "image" or as the raw request
     body. Returns the MaskPipeline.analyze() JSON, or the annotated image as
     JPEG with ?annotate=1. ?range=far enables long-range detection for
-    distant faces (slower).
+    distant faces (slower). Streaming clients add ?session=<id> to get a
+    stable track_id per face and labels smoothed across their frames;
+    &reset=1 starts the tracking over (e.g. after zooming).
 
         curl -F image=@photo.jpg http://127.0.0.1:5000/api/predict
     """
@@ -334,10 +362,17 @@ def api_predict():
         return jsonify({"error": "Send an image (JPEG/PNG) as form field 'image' or as the body"}), 400
 
     far = request.args.get("range", "near").lower() == "far"
+    session_id = request.args.get("session", "")
+    if session_id and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id):
+        return jsonify({"error": "session must be 1-64 letters, digits, '-' or '_'"}), 400
+
     with _pipeline_lock:
         pipeline = _get_pipeline()          # first request loads the models
         t0 = time.perf_counter()
         result = pipeline.analyze(frame, far=far)
+        if session_id:
+            reset = request.args.get("reset", "").lower() in ("1", "true", "yes")
+            pipeline.apply_tracking(result, _session_tracker(session_id, reset))
         result["inference_ms"] = round((time.perf_counter() - t0) * 1000, 1)
     result["range"] = "far" if far else "near"
 
