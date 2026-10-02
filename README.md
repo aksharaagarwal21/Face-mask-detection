@@ -212,8 +212,8 @@ too.
 
 ### Deploy to Hugging Face
 
-The app runs on a free Hugging Face Space (Docker, CPU). That gives you an
-HTTPS link that phones can open from any network, with no local server.
+The app runs as a Hugging Face Space (Docker, CPU). Docker Spaces need a
+Hugging Face PRO subscription.
 
 ```bash
 hf auth login                  # once, with a Write token from huggingface.co/settings/tokens
