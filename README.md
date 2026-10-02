@@ -119,6 +119,21 @@ button shows it as a QR code.
 On Windows, allow Python through the firewall when asked, or the phone can't
 connect.
 
+**Phones on any network, for free:** with
+[cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+installed (`winget install Cloudflare.cloudflared` on Windows), run
+
+```bash
+python app.py --tunnel
+```
+
+The app then runs on this computer and Cloudflare's free quick tunnel gives it
+a public HTTPS address, `https://<random-words>.trycloudflare.com`. The
+console prints the phone link with the access key. It needs no account, no
+open router port and no certificate warning, and requests through the tunnel
+always need the key. The address works only while the app runs and changes on
+every start.
+
 | | |
 |---|---|
 | **Zoom** | Pinch, the slider or +/−. Uses the phone's optical zoom when the browser exposes it, otherwise a digital crop of the full-resolution sensor image. Tap to aim at a spot; double-tap to reset. |
@@ -258,8 +273,9 @@ frame ─► YuNet face detector (small frames upscaled first)
 ## Project structure
 
 ```
-├── app.py                 Flask dashboard + REST API (--field: phone access)
+├── app.py                 Flask dashboard + REST API (--field / --tunnel: phone access)
 ├── secure_access.py       HTTPS certificate, access key, LAN address
+├── tunnel.py              Cloudflare quick tunnel: public HTTPS link to this computer
 ├── pipeline.py            detect + classify one image -> JSON-ready dict
 ├── face_detector.py       YuNet (default) / SSD face detection, small-image upscaling
 ├── mask_detector.py       classifier inference: flip TTA, calibration, Keras or TFLite
