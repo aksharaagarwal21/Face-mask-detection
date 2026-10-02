@@ -35,13 +35,16 @@ def test_space_host(repo_id, host):
     assert deploy.space_host(repo_id) == host
 
 
-def test_space_env_gives_phones_the_public_link():
-    # on a Space: SPACE_HOST and the FMD_ACCESS_KEY secret are set; app is imported by gunicorn
+@pytest.mark.parametrize("host_env,base", [
+    ({"SPACE_HOST": "me-face-mask-detection.hf.space"}, "https://me-face-mask-detection.hf.space"),     # Space
+    ({"FMD_PUBLIC_URL": "https://fmd-123.asia-south1.run.app"}, "https://fmd-123.asia-south1.run.app"),  # Cloud Run
+])
+def test_public_deploy_env_gives_phones_the_link(host_env, base):
+    # deployed: the host's address and FMD_ACCESS_KEY are set; app is imported by gunicorn
     code = ("import app; c = app.app.test_client(); "
             "r = c.get('/api/connect', environ_base={'REMOTE_ADDR': '10.1.2.3'}, headers={'X-Access-Key': 'k3y'}); "
             "print(r.status_code, r.get_json()['phone_urls'][0])")
-    env = {**os.environ, "SPACE_HOST": "me-face-mask-detection.hf.space", "FMD_ACCESS_KEY": "k3y"}
+    env = {**os.environ, **host_env, "FMD_ACCESS_KEY": "k3y"}
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True,
                          env=env, timeout=120)
-    assert out.stdout.split()[-2:] == ["200", "https://me-face-mask-detection.hf.space/field?key=k3y"], \
-        out.stdout + out.stderr
+    assert out.stdout.split()[-2:] == ["200", f"{base}/field?key=k3y"], out.stdout + out.stderr
