@@ -495,14 +495,22 @@ if __name__ == "__main__":
     parser.add_argument("--field", action="store_true",
                         help="Phone mode: reachable on the local network over HTTPS, access key on, "
                              "this computer's webcam off; prints the link for phones")
+    parser.add_argument("--tunnel", action="store_true",
+                        help="Like --field, but phones on any network use a public HTTPS link from "
+                             "Cloudflare's free quick tunnel (needs cloudflared, see tunnel.py)")
     args = parser.parse_args()
 
+    if args.field and args.tunnel:
+        parser.error("use --field (same Wi-Fi) or --tunnel (any network), not both")
     if args.field:
         args.host, args.https, args.no_autostart = "0.0.0.0", True, True
+    if args.tunnel:     # cloudflared reaches the app on loopback and serves the HTTPS itself
+        args.host, args.https, args.no_autostart = "127.0.0.1", False, True
 
     networked = args.host not in ("127.0.0.1", "localhost", "::1")
-    key = {"auto": new_access_key() if networked else None, "none": None}.get(args.access_key,
-                                                                             args.access_key)
+    exposed = networked or args.tunnel
+    key = {"auto": new_access_key() if exposed else None, "none": None}.get(args.access_key,
+                                                                           args.access_key)
     require_access_key(app, key)
 
     ssl_context = None
@@ -515,6 +523,15 @@ if __name__ == "__main__":
     phone_urls = []
     if networked:
         phone_urls = [f"{scheme}://{ip}:{args.port}/field" + (f"?key={key}" if key else "")]
+    if args.tunnel:
+        from tunnel import start_quick_tunnel
+        print("Starting the Cloudflare tunnel...")
+        try:
+            public = start_quick_tunnel(args.port, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                                "logs", "cloudflared.log"))
+        except RuntimeError as e:
+            raise SystemExit(f"❌ {e}")
+        phone_urls = [f"{public}/field" + (f"?key={key}" if key else "")]
     app.config["PHONE_URLS"] = phone_urls or app.config["PHONE_URLS"]
 
     # Auto-start detection thread
@@ -531,14 +548,19 @@ if __name__ == "__main__":
     print(f"  Dashboard (this computer): {local}")
     print(f"  Field mode (this computer): {local}/field")
     for url in phone_urls:
-        print(f"  Phone, same Wi-Fi:          {url}")
+        label = "Phone, any network:" if args.tunnel else "Phone, same Wi-Fi:"
+        print(f"  {label:<28}{url}")
         print("                              (or scan the QR code on the dashboard)")
     if key:
         print(f"  Access key: {key}")
     if args.https:
         print("  Self-signed certificate: the browser warns once; choose Advanced -> Proceed.")
-    if networked and not key:
-        print("  ⚠ No access key: anyone on this network can open the camera stream and API.")
+    if args.tunnel:
+        print("  The link works while this server runs and changes on every start.")
+    if exposed and not key:
+        print("  ⚠ No access key: anyone who can reach the server can open the camera stream and API.")
     print(f"{'='*64}\n")
 
-    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True, ssl_context=ssl_context)
+    # the reloader would run this block twice and start a second tunnel
+    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True, ssl_context=ssl_context,
+            use_reloader=args.debug and not args.tunnel)
