@@ -127,6 +127,14 @@ LOCKED_PAGE = """<!doctype html>
 
 
 def is_local_request():
+    """
+    From this computer itself. A tunnel or reverse proxy on this computer also
+    connects from loopback, but it adds forwarding headers, so those requests
+    come from someone else. (A client can add the headers to lose the
+    exemption, never to gain it.)
+    """
+    if request.headers.get("X-Forwarded-For") or request.headers.get("Cf-Connecting-Ip"):
+        return False
     return request.remote_addr in ("127.0.0.1", "::1")
 
 

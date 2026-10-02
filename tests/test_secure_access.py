@@ -56,6 +56,15 @@ def test_this_computer_needs_no_key(locked):
     assert locked.get("/", environ_base={"REMOTE_ADDR": "127.0.0.1"}).status_code == 200
 
 
+@pytest.mark.parametrize("header", ["Cf-Connecting-Ip", "X-Forwarded-For"])
+def test_requests_through_a_tunnel_need_the_key(locked, header):
+    # cloudflared (python app.py --tunnel) connects from loopback but forwards a visitor
+    loopback = {"REMOTE_ADDR": "127.0.0.1"}
+    assert locked.get("/", environ_base=loopback, headers={header: "203.0.113.7"}).status_code == 401
+    r = locked.get("/", environ_base=loopback, headers={header: "203.0.113.7", "X-Access-Key": "s3cret-key"})
+    assert r.status_code == 200
+
+
 def test_no_key_means_open():
     app = Flask(__name__)
     app.add_url_rule("/", "i", lambda: "ok")
