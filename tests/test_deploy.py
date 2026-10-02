@@ -19,6 +19,14 @@ def test_space_gets_the_app_but_not_tests_or_docs(tmp_path):
     assert "sdk: docker" in readme and "app_port: 5000" in readme
 
 
+def test_extract_commit_gets_the_app_without_the_space_readme(tmp_path):
+    files = deploy.extract_commit(str(tmp_path))
+    for needed in ("Dockerfile", "app.py", "models/mask_detector.keras", "templates/field.html"):
+        assert needed in files
+    assert "README.md" not in files and not (tmp_path / "README.md").exists()
+    assert not [f for f in files if f.startswith(("tests/", "docs/", ".github/"))]
+
+
 @pytest.mark.parametrize("repo_id,host", [
     ("aksharaagarwal21/face-mask-detection", "https://aksharaagarwal21-face-mask-detection.hf.space"),
     ("Some.User/My_Space", "https://some-user-my-space.hf.space"),

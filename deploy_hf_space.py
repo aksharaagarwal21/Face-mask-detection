@@ -80,8 +80,8 @@ def run(*cmd):
     return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=True).stdout
 
 
-def stage_files(dest):
-    """Committed files (HEAD) needed by the Space, extracted into dest. Returns the file list."""
+def extract_commit(dest):
+    """Committed files (HEAD) needed to run the app, extracted into dest. Returns the file list."""
     archive = subprocess.run(["git", "archive", "--format=tar", "HEAD"], cwd=ROOT,
                              capture_output=True, check=True).stdout
     kept = []
@@ -91,6 +91,12 @@ def stage_files(dest):
                 continue
             tar.extract(member, dest)
             kept.append(member.name)
+    return kept
+
+
+def stage_files(dest):
+    """The app files plus the Space README, extracted into dest. Returns the file list."""
+    kept = extract_commit(dest)
     with open(os.path.join(dest, "README.md"), "w", encoding="utf-8") as f:
         f.write(SPACE_README.format(github=GITHUB_URL))
     return sorted(kept + ["README.md"])
