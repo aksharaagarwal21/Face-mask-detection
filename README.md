@@ -210,9 +210,32 @@ camera passed into the container (`--device /dev/video0` on Linux). The
 container listens on `$PORT` (default 5000), so hosts that assign a port work
 too.
 
+### Deploy to Google Cloud Run
+
+Cloud Run gives you an HTTPS link that phones can open from any network, with
+no local server. Light use fits in the free tier (2 million requests,
+180,000 vCPU-seconds and 360,000 GiB-seconds a month), but the project needs a
+billing account.
+
+```bash
+gcloud auth login                         # once
+gcloud config set project <project-id>    # a project with billing enabled
+python deploy_cloud_run.py                # creates or updates the service face-mask-detection
+```
+
+The script builds the last commit (not uncommitted edits), without tests and
+docs, with Cloud Build. It runs it in Mumbai (`--region` to change) with 2 GiB
+of memory, no instance while idle (the first request after a pause takes ~30 s)
+and at most one instance. On the first run it creates a random access key and
+sets it as `FMD_ACCESS_KEY`. It then checks the live app and prints the phone
+link, `https://face-mask-detection-....run.app/field?key=...`. The key is also
+saved in `.deploy/cloud_run.json` (git-ignored). The URL is public, but every
+page and API call needs the key. `--new-key` replaces the key, after which old
+links stop working.
+
 ### Deploy to Hugging Face
 
-The app runs as a Hugging Face Space (Docker, CPU). Docker Spaces need a
+The app also runs as a Hugging Face Space (Docker, CPU). Docker Spaces need a
 Hugging Face PRO subscription.
 
 ```bash
@@ -291,6 +314,7 @@ frame ─► YuNet face detector (small frames upscaled first)
 ├── calibrate.py           temperature scaling, ECE, reliability diagram
 ├── export.py              TFLite export and verification
 ├── explain.py             Grad-CAM
+├── deploy_cloud_run.py    deploy to Google Cloud Run (deploy_hf_space.py: Hugging Face)
 ├── download_dataset.py    Kaggle download, face cropping, photo-level split
 ├── alert_system.py, analytics.py, logger.py, utils.py, config.py
 ├── models/                trained model, YuNet, metrics JSON, plots
