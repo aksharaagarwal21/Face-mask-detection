@@ -9,7 +9,7 @@
 # The live webcam stream needs a camera device inside the container
 # (Linux hosts: docker run --device /dev/video0 ...).
 #
-# Hugging Face Spaces: python deploy_hf_space.py (see README).
+# Google Cloud Run: python deploy_cloud_run.py. Hugging Face Spaces: python deploy_hf_space.py (see README).
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
