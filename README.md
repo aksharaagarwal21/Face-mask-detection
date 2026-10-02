@@ -142,6 +142,7 @@ every start.
 | **Freeze / Photo** | Freeze holds a frame to inspect at full resolution. Photo uses the phone's own camera app at full resolution (works without HTTPS too). |
 | **Save** | Annotated copy with time and counts, saved on the phone only. Nothing is stored on the server. |
 | **Alerts** | Vibration and a beep once per newly flagged person (configurable). |
+| **📱 Open on a phone** | The link with the access key as a QR code, for opening field mode on another phone (or on a phone when the page was opened on a laptop). |
 
 On the development laptop (i7-1255U CPU), live analysis of a 1080p stream with
 a 23-face crowd runs at ~2.5 frames/s in near range and ~1 frame/s in far

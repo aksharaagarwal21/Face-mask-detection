@@ -622,6 +622,42 @@ function initControls() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && state.stream) requestWakeLock();
   });
+
+  $('btnPhone').addEventListener('click', openPhoneSheet);
+  $('btnCopyLink').addEventListener('click', () => {
+    navigator.clipboard.writeText($('phoneLink').textContent)
+      .then(() => toast('Link copied'), () => toast('Copy failed: select the link instead'));
+  });
+}
+
+// ── Open on a phone: the link with the access key, as a QR code ──
+async function openPhoneSheet() {
+  let url = '';
+  try {
+    const res = await fetch('/api/connect');
+    if (res.ok) url = ((await res.json()).phone_urls || [])[0] || '';
+  } catch { /* offline */ }
+
+  // a private network address means a --field server (same Wi-Fi, self-signed certificate)
+  const lan = /^https?:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url);
+  let how = lan
+    ? 'Connect the phone to the same Wi-Fi, scan the code, then accept the certificate warning once (Advanced → Proceed).'
+    : 'Scan the code with the phone camera. Works on any network.';
+  if (!window.qrcode) how = 'QR code unavailable offline: open this link on the phone.';
+  $('phoneNote').textContent = url
+    ? `${how} The link contains the access key, so share it only with your team.`
+    : 'No phone link: start the server with python app.py --tunnel (any network) or --field (same Wi-Fi).';
+
+  $('phoneQr').innerHTML = '';
+  if (url && window.qrcode) {
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    $('phoneQr').innerHTML = qr.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
+  }
+  $('phoneLink').textContent = url;
+  $('phoneLink').hidden = $('btnCopyLink').hidden = !url;
+  $('phoneSheet').showModal();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
