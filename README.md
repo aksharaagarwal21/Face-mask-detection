@@ -119,6 +119,21 @@ button shows it as a QR code.
 On Windows, allow Python through the firewall when asked, or the phone can't
 connect.
 
+**Phones on any network, for free:** with
+[cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+installed (`winget install Cloudflare.cloudflared` on Windows), run
+
+```bash
+python app.py --tunnel
+```
+
+The app then runs on this computer and Cloudflare's free quick tunnel gives it
+a public HTTPS address, `https://<random-words>.trycloudflare.com`. The
+console prints the phone link with the access key. It needs no account, no
+open router port and no certificate warning, and requests through the tunnel
+always need the key. The address works only while the app runs and changes on
+every start.
+
 | | |
 |---|---|
 | **Zoom** | Pinch, the slider or +/−. Uses the phone's optical zoom when the browser exposes it, otherwise a digital crop of the full-resolution sensor image. Tap to aim at a spot; double-tap to reset. |
@@ -127,6 +142,7 @@ connect.
 | **Freeze / Photo** | Freeze holds a frame to inspect at full resolution. Photo uses the phone's own camera app at full resolution (works without HTTPS too). |
 | **Save** | Annotated copy with time and counts, saved on the phone only. Nothing is stored on the server. |
 | **Alerts** | Vibration and a beep once per newly flagged person (configurable). |
+| **📱 Open on a phone** | The link with the access key as a QR code, for opening field mode on another phone (or on a phone when the page was opened on a laptop). |
 
 On the development laptop (i7-1255U CPU), live analysis of a 1080p stream with
 a 23-face crowd runs at ~2.5 frames/s in near range and ~1 frame/s in far
@@ -191,7 +207,58 @@ docker run -p 5000:5000 -e FMD_ACCESS_KEY=choose-a-long-key face-mask-detection
 can reach the port can use the API.
 
 This serves the dashboard and API with gunicorn. The live stream needs a
-camera passed into the container (`--device /dev/video0` on Linux).
+camera passed into the container (`--device /dev/video0` on Linux). The
+container listens on `$PORT` (default 5000), so hosts that assign a port work
+too.
+
+### Deploy to Google Cloud Run
+
+Cloud Run gives you an HTTPS link that phones can open from any network, with
+no local server. Light use fits in the free tier (2 million requests,
+180,000 vCPU-seconds and 360,000 GiB-seconds a month), but the project needs a
+billing account.
+
+```bash
+gcloud auth login                         # once
+gcloud config set project <project-id>    # a project with billing enabled
+python deploy_cloud_run.py                # creates or updates the service face-mask-detection
+```
+
+The script builds the last commit (not uncommitted edits), without tests and
+docs, with Cloud Build. It runs it in Mumbai (`--region` to change) with 2 GiB
+of memory, no instance while idle (the first request after a pause takes ~30 s)
+and at most one instance. On the first run it creates a random access key and
+sets it as `FMD_ACCESS_KEY`. It then checks the live app and prints the phone
+link, `https://face-mask-detection-....run.app/field?key=...`. The key is also
+saved in `.deploy/cloud_run.json` (git-ignored). The URL is public, but every
+page and API call needs the key. `--new-key` replaces the key, after which old
+links stop working.
+
+### Deploy to Hugging Face
+
+The app also runs as a Hugging Face Space (Docker, CPU). Docker Spaces need a
+Hugging Face PRO subscription.
+
+```bash
+hf auth login                  # once, with a Write token from huggingface.co/settings/tokens
+python deploy_hf_space.py      # creates or updates spaces/<you>/face-mask-detection
+```
+
+The script uploads the last commit (not uncommitted edits), without tests and
+docs. On the first run it creates a random access key and stores it as the
+Space secret `FMD_ACCESS_KEY`. It then waits for the build (~10 minutes the
+first time) and checks the live app. At the end it prints the phone link,
+`https://<you>-face-mask-detection.hf.space/field?key=...`. The key is also
+saved in `.deploy/hf_space.json` (git-ignored).
+
+The Space is public, but every page and API call needs the key.
+`--new-key` replaces the key, after which old links stop working. `--private`
+limits the Space to signed-in members of your account.
+
+To redeploy automatically on every push to `main`, add your Hugging Face token
+as the repository secret `HF_TOKEN` (*Settings → Secrets and variables →
+Actions*). `.github/workflows/deploy.yml` then runs the same script and never
+prints the key.
 
 ## Reproducing the model
 
@@ -230,8 +297,9 @@ frame ─► YuNet face detector (small frames upscaled first)
 ## Project structure
 
 ```
-├── app.py                 Flask dashboard + REST API (--field: phone access)
+├── app.py                 Flask dashboard + REST API (--field / --tunnel: phone access)
 ├── secure_access.py       HTTPS certificate, access key, LAN address
+├── tunnel.py              Cloudflare quick tunnel: public HTTPS link to this computer
 ├── pipeline.py            detect + classify one image -> JSON-ready dict
 ├── face_detector.py       YuNet (default) / SSD face detection, small-image upscaling
 ├── mask_detector.py       classifier inference: flip TTA, calibration, Keras or TFLite
@@ -247,6 +315,7 @@ frame ─► YuNet face detector (small frames upscaled first)
 ├── calibrate.py           temperature scaling, ECE, reliability diagram
 ├── export.py              TFLite export and verification
 ├── explain.py             Grad-CAM
+├── deploy_cloud_run.py    deploy to Google Cloud Run (deploy_hf_space.py: Hugging Face)
 ├── download_dataset.py    Kaggle download, face cropping, photo-level split
 ├── alert_system.py, analytics.py, logger.py, utils.py, config.py
 ├── models/                trained model, YuNet, metrics JSON, plots

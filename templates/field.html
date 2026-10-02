@@ -22,6 +22,7 @@
         <span class="dot"></span><span id="statusText">Starting</span>
       </div>
       <div class="metrics mono" id="metrics">—</div>
+      <button class="icon-btn" id="btnPhone" aria-label="Open on a phone" title="Open on a phone">📱</button>
       <button class="icon-btn" id="btnSettings" aria-label="Settings">⚙</button>
     </header>
 
@@ -113,7 +114,21 @@
     </form>
   </dialog>
 
+  <!-- ── Open on a phone ── -->
+  <dialog class="sheet" id="phoneSheet">
+    <form method="dialog">
+      <h2>Open on a phone</h2>
+      <div class="qr" id="phoneQr"></div>
+      <p class="note" id="phoneNote"></p>
+      <pre class="link mono" id="phoneLink"></pre>
+      <button class="btn" type="button" id="btnCopyLink">⧉ Copy link</button>
+      <button class="btn btn-primary" value="close">Done</button>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status"></div>
+  <!-- async: on a network without internet the page must not wait for the CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" async></script>
   <script src="/static/field.js"></script>
 </body>
 </html>

@@ -8,12 +8,15 @@
 #
 # The live webcam stream needs a camera device inside the container
 # (Linux hosts: docker run --device /dev/video0 ...).
+#
+# Google Cloud Run: python deploy_cloud_run.py. Hugging Face Spaces: python deploy_hf_space.py (see README).
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    TF_CPP_MIN_LOG_LEVEL=2
+    TF_CPP_MIN_LOG_LEVEL=2 \
+    PORT=5000
 
 WORKDIR /app
 
@@ -32,9 +35,10 @@ RUN useradd --create-home appuser \
  && chown -R appuser logs screenshots
 USER appuser
 
+# Hosts that assign the port themselves (Railway, Render, ...) set $PORT
 EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/model', timeout=4)"
+  CMD python -c "import os, urllib.request as u; u.urlopen('http://127.0.0.1:%s/api/model' % os.environ.get('PORT', '5000'), timeout=4)"
 
 # One worker so the model is loaded once; /api/predict serialises inference anyway
-CMD ["gunicorn", "--workers", "1", "--threads", "4", "--timeout", "120", "--bind", "0.0.0.0:5000", "app:app"]
+CMD ["sh", "-c", "exec gunicorn --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:${PORT} app:app"]
